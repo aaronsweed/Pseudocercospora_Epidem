@@ -1,0 +1,261 @@
+---
+title: "Pseudocercospora epidemiology"
+author: "Aaron Weed"
+date: "2026-08-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readxl)
+library(tidyverse)
+library(ggpubr)
+library(GGally)
+```
+
+## Overview
+
+Cheyenne would like to model:
+
+- Spore counts as a function of environmental factors (temp, rain, RH): 
+-- Sporecounts_Master.xlsx: she collected spore count data at two sites over a few years
+-- Model system in avocado predicted spore counts by avg weekly temperature and total (weekly) rainfall
+
+- Disease severity by treatment 
+-- Pseudocercospora_disease_severity_Aug2026.xlsx: 
+
+
+## Spore Counts
+
+### Import and Examine the data 
+
+```{r spore_counts, fig.width= 8, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE}
+
+Sporecounts_Master <- read_excel("data/Sporecounts_Master.xlsx", 
+    sheet = "Master sheet", col_types = c("numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "text", "text", "text", 
+        "text", "text", "date", "date"))
+View(Sporecounts_Master)
+
+# Numeric variables to plot
+numeric_vars <- c("nSpores", "Tmax", "Tmin", "Tave", "Rhm", "Rain")
+
+df_long <- Sporecounts_Master %>%
+  pivot_longer(
+    cols = all_of(numeric_vars),
+    names_to = "Variable",
+    values_to = "Value"
+  ) %>%
+  filter(!is.na(Value))
+
+ggplot(df_long, aes(x = Value, fill = Season)) +
+  geom_histogram(
+    bins = 20,
+    alpha = 0.5,
+    position = "identity"
+  ) +
+  facet_grid(
+    Variable ~ Orchard*Season,
+    scales = "free"
+  ) +
+  theme_classic() +
+  labs(
+    x = "Value",
+    y = "Frequency",
+    fill = "Season"
+  )
+
+# Scatter plots
+
+ggscatter(Sporecounts_Master[numeric_vars])
+
+# Compare all orchards and seasons
+
+ggscatter(
+  Sporecounts_Master,
+  x = "Tave",
+  y = "nSpores",
+  facet.by = c("Orchard", "Season"),
+  add = "reg.line",
+  conf.int = TRUE,
+  cor.coef = TRUE,
+  cor.method = "pearson",
+  xlab = "Mean temperature (°C)",
+  ylab = "Number of spores"
+)
+
+# Scatterplot matrix for the weather variables
+
+vars <- c("nSpores","Tmax", "Tmin", "Tave", "Rhm", "Rain")
+
+Sporecounts_Master %>%
+  select(all_of(vars), Orchard, Season) %>%
+  ggpairs(
+    columns = vars,
+    aes(color = Orchard, alpha = 0.5),
+    upper = list(
+      continuous = wrap("cor", method = "spearman", size = 3.5)
+    ),
+    lower = list(
+      continuous = wrap("points", alpha = 0.4, size = 1.2)
+    ),
+    diag = list(
+      continuous = wrap("densityDiag", alpha = 0.4)
+    )
+)
+
+
+# Scatterplots for the weather variables vs Spores
+
+df_long2 <- Sporecounts_Master %>%
+  pivot_longer(
+    cols = c(Tmax, Tmin, Tave, Rhm, Rain),
+    names_to = "WeatherVariable",
+    values_to = "WeatherValue"
+  ) %>%
+  mutate(log_nSpores = log1p(nSpores))
+
+ggplot(df_long2, aes(x = WeatherValue, y = log_nSpores)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = TRUE) +
+  facet_grid(
+    WeatherVariable ~ Orchard + Season,
+    scales = "free_x"
+  ) +
+  theme_classic() +
+  labs(
+    x = "Weather variable",
+    y = "log(Number of spores + 1)"
+  )
+
+
+Sporecounts_Master %>%
+  select(all_of(weather_vars), Orchard, Season) %>%
+  ggpairs(
+    columns = weather_vars,
+    aes(color = Orchard, alpha = 0.5),
+    upper = list(
+      continuous = wrap(
+        "cor",
+        method = "pearson",
+        size = 4
+      )
+    ),
+    lower = list(
+      continuous = wrap(
+        "points",
+        alpha = 0.4,
+        size = 1.5
+      )
+    ),
+    diag = list(
+      continuous = wrap(
+        "densityDiag",
+        alpha = 0.4
+      )
+    )
+  )
+
+```
+
+### Seasonal Weather
+
+The below plots show weekly weather variables by Orchard and season. 
+
+Ho do you calculate your variable "week". It seem like week 10 (and likley others) varies per year.
+
+```{r spore_weather, fig.width= 8, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE}
+
+weather_vars <- c("Tmax", "Tmin", "Tave", "Rhm", "Rain")
+
+weather_long <- Sporecounts_Master %>%
+  pivot_longer(
+    cols = all_of(weather_vars),
+    names_to = "Variable",
+    values_to = "Value"
+  )
+
+# Weather variables by start Date
+ggplot(
+  weather_long,
+  aes(
+    x = Start_date,
+    y = Value,
+    color = Season,
+    group = Season
+  )
+) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 1.5) +
+  facet_grid(
+    Variable ~ Orchard,
+    scales = "free_y"
+  ) +
+  theme_classic() +
+  labs(
+    x = "Date",
+    y = NULL,
+    color = "Season", main= "Weather variables by Date"
+  ) +
+  theme(
+    strip.text = element_text(size = 10),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    ),
+    legend.position = "bottom"
+  )
+
+# Weather by days since season start
+
+df <- Sporecounts_Master %>%
+  mutate(
+    StartDate = as.Date(Start_date),
+    SeasonStart = as.Date(
+      paste0(
+        substr(Season, 1, 4),
+        "-10-01"
+      )
+    ),
+    DaysSinceStart = as.numeric(StartDate - SeasonStart)
+  )
+
+
+weather_long <- df %>%
+  pivot_longer(
+    cols = all_of(weather_vars),
+    names_to = "Variable",
+    values_to = "Value"
+  )
+
+ggplot(
+  weather_long,
+  aes(
+    x = DaysSinceStart,
+    y = Value,
+    color = Season,
+    group = Season
+  )
+) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 1.5) +
+  facet_grid(
+    Variable ~ Orchard,
+    scales = "free_y"
+  ) +
+  theme_classic() +
+  labs(
+    x = "Days since start of season",
+    y = NULL,
+    color = "Season"
+  ) +
+  theme(
+    legend.position = "bottom"
+  )
+```
+
+
+
