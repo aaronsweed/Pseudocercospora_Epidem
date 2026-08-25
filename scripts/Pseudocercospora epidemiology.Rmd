@@ -2,7 +2,15 @@
 title: "Pseudocercospora epidemiology"
 author: "Aaron Weed"
 date: "2026-08-21"
-output: html_document
+output:
+  html_document:
+    theme: cerulean        # Choose a modern Bootstrap theme
+    highlight: tango       # Style your code syntax highlighting
+    toc: true              # Add a Table of Contents
+    toc_float: true        # Make the Table of Contents float as you scroll
+    number_sections: true  # Add numbered headings automatically
+    code_folding: hide     # Allow readers to show/hide R code blocks
+    df_print: paged        # Render data frames as beautiful interactive tables
 ---
 
 ```{r setup, include=FALSE}
@@ -11,34 +19,200 @@ knitr::opts_chunk$set(echo = TRUE)
 library(readxl)
 library(tidyverse)
 library(ggpubr)
+library(knitr)
+library(kableExtra)
 library(GGally)
+
+styled_kable <- function(x, caption = NULL, digits = 2) {
+  
+  x %>%
+    kable(
+            digits = digits,
+      caption = caption
+    ) %>%
+    kable_styling(
+      bootstrap_options = c(
+        "striped",
+        "hover",
+        "condensed"
+      ),
+      full_width = FALSE
+    )
+}
 ```
 
 ## Overview
 
-Cheyenne would like to model:
+**Questions:**
 
-- Spore counts as a function of environmental factors (temp, rain, RH): 
--- Sporecounts_Master.xlsx: she collected spore count data at two sites over a few years
--- Model system in avocado predicted spore counts by avg weekly temperature and total (weekly) rainfall
+1. When are spores spread in the orchard?
 
-- Disease severity by treatment 
--- Pseudocercospora_disease_severity_Aug2026.xlsx: 
+- Does spore release correlate with certain climatic conditions (temperature, relative humidity, rain)?
+- Are spores more prevalent during certain stages of kiwifruit development
+- Is there a dominant direction that the spores are coming from?
 
+2. When should chemicals be applied during the season?
+
+- At what developmental stages should chemicals be applied to reduce disease severity?
+- Is disease severity higher at certain parts of the plant (i.e. cordon, middle or tip of branch)
+
+**Datasets:**
+
+- Spore counts over time in each orchard with weather variables: Sporecounts_Master.xlsx: Cheyenne collected spore count data at two sites over a few years
+
+- There is a similar system in avocado which predicted spore counts by avg weekly temperature and total (weekly) rainfall (Darvas 1982)
+
+- Disease severity by treatment: Pseudocercospora_disease_severity_Aug2026.xlsx: 
 
 ## Spore Counts
 
 ### Import and Examine the data 
 
-```{r spore_counts, fig.width= 8, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE}
+```{r spore_data, fig.width= 12, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE, results= 'hide', fig.align='left'}
 
-Sporecounts_Master <- read_excel("data/Sporecounts_Master.xlsx", 
-    sheet = "Master sheet", col_types = c("numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "text", "text", "text", 
-        "text", "text", "date", "date"))
-View(Sporecounts_Master)
+Sporecounts_Master <- read_excel("C:/Users/aweed/OneDrive - DOI/Documents/Projects/Pseudocercospora/data/Sporecounts_Master.xlsx",sheet = "Master sheet",
+    col_types = c("numeric", "numeric", "numeric",
+        "numeric", "numeric", "numeric",
+        "numeric", "numeric", "text", "text",
+        "text", "text", "text", "date", "date"))
+```
+
+**The dataset contains:**
+
+`r nrow(Sporecounts_Master)` total observations (rows)
+
+Observations from `r unique(Sporecounts_Master$Season)` seasons
+
+N observations from `r Sporecounts_Master %>% count(Season, Orchard)`
+
+### Summary Statistics
+
+```{r spore_summ, fig.width= 12, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE, fig.align='left'}
+
+# Generate Summary stats per grouping variable (Orchard, Season)
+
+# Identify numeric variables
+numeric_vars <- Sporecounts_Master %>%
+  select(where(is.numeric)) %>%
+  names()
+
+# Summary statistics by Season, Orchard, and year
+summary_stats <- Sporecounts_Master %>%
+  pivot_longer(
+    cols = all_of(numeric_vars),
+    names_to = "Variable",
+    values_to = "Value"
+  ) %>%
+  group_by(Orchard, Season, Variable) %>%
+  summarise(
+    N = n(),
+    Missing = sum(is.na(Value)),
+    Percent_Missing = 100 * mean(is.na(Value)),
+    Mean = mean(Value, na.rm = TRUE),
+    SD = sd(Value, na.rm = TRUE),
+    Median = median(Value, na.rm = TRUE),
+    Min = min(Value, na.rm = TRUE),
+    Max = max(Value, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+styled_kable(
+  summary_stats,
+  caption = "Summary statistics by season and orchard"
+)
+```
+
+
+### Data Checks
+
+```{r spore_counts, fig.width= 12, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE, fig.align='left'}
+
+# Identify numeric variables
+numeric_vars <- Sporecounts_Master %>%
+  select(where(is.numeric)) %>%
+  names()
+
+# Missing values by variable for each
+
+missing_check <- Sporecounts_Master %>% 
+  group_by(Orchard, Season) %>% 
+  summarise(
+    across(
+      numeric_vars,
+      ~ sum(is.na(.))
+    )
+  ) %>%
+  pivot_longer(
+    cols = all_of(numeric_vars),
+    names_to = "Variable",
+    values_to = "Missing"
+  )  %>%
+  mutate(
+    Percent_Missing = 100 * Missing / nrow(Sporecounts_Master)
+  )
+
+  styled_kable(
+  missing_check %>% filter(Missing > 0),
+  caption = "Missing values by variable"
+)
+
+# Check for impossible or suspicious weather values
+
+Sporecounts_Master %>%
+  summarise(
+    Tmin_below_zero = sum(Tmin < 0, na.rm = TRUE),
+    Tmax_below_zero = sum(Tmax < 0, na.rm = TRUE),
+    Tmax_less_Tmin = sum(Tmax < Tmin, na.rm = TRUE),
+    Rhm_below_0 = sum(Rhm < 0, na.rm = TRUE),
+    Rhm_above_100 = sum(Rhm > 100, na.rm = TRUE),
+    Rain_below_0 = sum(Rain < 0, na.rm = TRUE),
+    nSpores_below_0 = sum(nSpores < 0, na.rm = TRUE)
+  ) %>%
+  kable(
+    format = "html",
+    digits = 2,
+    caption = "Check for impossible or suspicious weather values"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  )
+week_check <- Sporecounts_Master %>%
+  group_by(Season, Week) %>%
+  summarise(
+    Start_date = min(Start_date, na.rm = TRUE),
+    End_date   = max(End_date, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(Season, Week) %>%
+  group_by(Season) %>%
+  mutate(
+    Previous_Week = lag(Week),
+    Previous_Start = lag(Start_date),
+    Days_from_previous = as.numeric(
+      Start_date - Previous_Start
+    ),
+    Week_difference = Week - Previous_Week
+  ) %>%
+  ungroup()
+
+
+#identifies cases where consecutive Week values are not seven days apart.
+
+styled_kable(
+  week_check %>%
+  filter(
+    !is.na(Days_from_previous),
+    Days_from_previous != 7
+  ),
+  caption = "consecutive Week values that are not seven days apart."
+)
+
+```
+
+### Exploratory Plots
+
+```{r spore_explore_plots, fig.width= 12, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE, results= 'hide',fig.align='left'}
 
 # Numeric variables to plot
 numeric_vars <- c("nSpores", "Tmax", "Tmin", "Tave", "Rhm", "Rain")
@@ -65,36 +239,18 @@ ggplot(df_long, aes(x = Value, fill = Season)) +
   labs(
     x = "Value",
     y = "Frequency",
-    fill = "Season"
+    fill = "Season",
+    title = "Histograms of measured variables by Orchard and Season"
   )
 
 # Scatter plots
 
-ggscatter(Sporecounts_Master[numeric_vars])
-
-# Compare all orchards and seasons
-
-ggscatter(
-  Sporecounts_Master,
-  x = "Tave",
-  y = "nSpores",
-  facet.by = c("Orchard", "Season"),
-  add = "reg.line",
-  conf.int = TRUE,
-  cor.coef = TRUE,
-  cor.method = "pearson",
-  xlab = "Mean temperature (°C)",
-  ylab = "Number of spores"
-)
-
-# Scatterplot matrix for the weather variables
-
-vars <- c("nSpores","Tmax", "Tmin", "Tave", "Rhm", "Rain")
+# Scatter Plot matrix of measured variables
 
 Sporecounts_Master %>%
-  select(all_of(vars), Orchard, Season) %>%
-  ggpairs(
-    columns = vars,
+  select(all_of(numeric_vars), Orchard, Season) %>%
+  ggpairs(title ="Scatter Plot matrix of measured variables",
+    columns = numeric_vars,
     aes(color = Orchard, alpha = 0.5),
     upper = list(
       continuous = wrap("cor", method = "spearman", size = 3.5)
@@ -118,23 +274,51 @@ df_long2 <- Sporecounts_Master %>%
   ) %>%
   mutate(log_nSpores = log1p(nSpores))
 
-ggplot(df_long2, aes(x = WeatherValue, y = log_nSpores)) +
-  geom_point(alpha = 0.5) +
-  geom_smooth(method = "lm", se = TRUE) +
-  facet_grid(
-    WeatherVariable ~ Orchard + Season,
-    scales = "free_x"
-  ) +
-  theme_classic() +
-  labs(
-    x = "Weather variable",
-    y = "log(Number of spores + 1)"
-  )
+# Create separate plots
+weather_plots <- df_long2 %>%
+  split(.$WeatherVariable) %>%
+  lapply(function(dat) {
+    
+    ggplot(dat, aes(x = WeatherValue, y = log_nSpores)) +
+      geom_point(alpha = 0.5) +
+      geom_smooth(
+        method = "lm",
+        se = FALSE
+      ) +
+      facet_grid(
+        ~ Orchard + Season,
+        scales = "free_x"
+      ) +
+      theme_classic() +
+      labs(
+        x = unique(dat$WeatherVariable),
+        y = "log(Number of spores + 1)",
+        title = paste(
+          unique(dat$WeatherVariable),
+          "vs Spores (log)"
+        )
+      )
+  })
 
+# View the individual plots
+weather_plots$Tmax
+weather_plots$Tmin
+weather_plots$Tave
+weather_plots$Rhm
+weather_plots$Rain
+```
+
+### Seasonal Weather
+
+The below plots show weekly weather variables by Orchard and season. 
+
+```{r spore_weather, fig.width= 12, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE, results= 'hide',fig.align='left'}
+
+weather_vars <- c("Tmax", "Tmin", "Tave", "Rhm", "Rain")
 
 Sporecounts_Master %>%
   select(all_of(weather_vars), Orchard, Season) %>%
-  ggpairs(
+  ggpairs(title = "Scatter Plot Matrix of Weather variables",
     columns = weather_vars,
     aes(color = Orchard, alpha = 0.5),
     upper = list(
@@ -159,17 +343,6 @@ Sporecounts_Master %>%
     )
   )
 
-```
-
-### Seasonal Weather
-
-The below plots show weekly weather variables by Orchard and season. 
-
-Ho do you calculate your variable "week". It seem like week 10 (and likley others) varies per year.
-
-```{r spore_weather, fig.width= 8, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE}
-
-weather_vars <- c("Tmax", "Tmin", "Tave", "Rhm", "Rain")
 
 weather_long <- Sporecounts_Master %>%
   pivot_longer(
@@ -255,7 +428,15 @@ ggplot(
   theme(
     legend.position = "bottom"
   )
+
 ```
 
+### Regression models
+
+```{r spre_pred,fig.width= 12, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE, results= 'hide',fig.align='left'}
+
+
+
+```
 
 
