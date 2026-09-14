@@ -70,7 +70,7 @@ styled_kable <- function(x, caption = NULL, digits = 2) {
 
 ```{r spore_data, fig.width= 12, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE, results= 'hide', fig.align='left'}
 
-Sporecounts_Master <- read_excel("C:/Users/aweed/OneDrive - DOI/Documents/Projects/Pseudocercospora/data/Sporecounts_Master.xlsx",sheet = "Master sheet",
+Sporecounts_Master <- read_excel("C:/Users/aweed/OneDrive - DOI/Documents/Projects/Pseudocercospora/data/Sporecounts_MasterV2.xlsx",sheet = "Master sheet",
     col_types = c("numeric", "numeric", "numeric",
         "numeric", "numeric", "numeric",
         "numeric", "numeric", "text", "text",
@@ -84,6 +84,8 @@ Sporecounts_Master <- read_excel("C:/Users/aweed/OneDrive - DOI/Documents/Projec
 Observations from `r unique(Sporecounts_Master$Season)` seasons
 
 N observations from `r Sporecounts_Master %>% count(Season, Orchard)`
+
+The values for the variable Week do not correspond across the different seasons (e.g., Week 1 in 2023/2024 is not the same date as Week 1 in the 2024/2025 season) use Start and End date instead.
 
 ### Summary Statistics
 
@@ -210,6 +212,8 @@ styled_kable(
 
 ```
 
+
+
 ### Exploratory Plots
 
 ```{r spore_explore_plots, fig.width= 12, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE, results= 'hide',fig.align='left'}
@@ -311,6 +315,10 @@ weather_plots$Rain
 ### Seasonal Weather
 
 The below plots show weekly weather variables by Orchard and season. 
+
+Notes:
+
+- Orchard manager for the rainfall data for Mahela installed the sensors halfway through the 2023/2024 season which is why that data record is shorter than others
 
 ```{r spore_weather, fig.width= 12, fig.height= 8, warning=FALSE, comment= FALSE, include=TRUE, results= 'hide',fig.align='left'}
 

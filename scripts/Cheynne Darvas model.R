@@ -1,9 +1,13 @@
 library(ggplot2)
 
-# Define the response function
+# Define the response function from Darvas 1982
+
 D <- function(x, y) {
   -58.99 + 3.22 * x + 0.25 * y
 }
+
+# x= Avg weekly temp
+# y= total weekly rainfall
 
 # Define the ranges of x and y
 x <- seq(0, 28, length.out = 200)
@@ -41,14 +45,6 @@ library(plotly)
 # Convert D to matrix for plotly
 z <- matrix(
   df$D,
-  nrow = length(x),
-  ncol = length(y)
-)
-
-
-# Horizontal D = 0 plane
-z_zero <- matrix(
-  0,
   nrow = length(x),
   ncol = length(y)
 )

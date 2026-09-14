@@ -1,0 +1,359 @@
+---
+title: "Pseudocercospora Spray trial"
+author: "C.A. Theron"
+date: "2026-08-26"
+tput:
+  html_document:
+    theme: cerulean        # Choose a modern Bootstrap theme
+    highlight: tango       # Style your code syntax highlighting
+    toc: true              # Add a Table of Contents
+    toc_float: true        # Make the Table of Contents float as you scroll
+    number_sections: true  # Add numbered headings automatically
+    code_folding: hide     # Allow readers to show/hide R code blocks
+    df_print: paged        # Render data frames as beautiful interactive tables
+---
+
+### Overview
+1. During which developmental stages should chemicals be applied to reduce disease severity of Pseudocercospora spot and rot disease?
+
+2. Is disease severity higher at certain parts of the plant (i.e. cordon, middle or tip of branch)?
+
+```{r setup, include=FALSE}
+# Global options: show code, hide noisy warnings/messages across all chunks
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 7,
+  fig.height = 4.5,
+  fig.align = "center")
+
+# Load libraries
+library(tidyverse)
+library(readxl)
+library(car)
+library(multcomp)
+library(FSA)
+library(knitr)
+library(ggpubr)
+library(broom)
+```
+
+### Import and filter dataset
+
+```{r data-prep}
+#Set working directory and import dataset 
+dat <- read_excel("C:/Users/aweed/OneDrive - DOI/Documents/Projects/Pseudocercospora/data/Pseudocercospora_disease_severity_Aug2026.xlsx",  sheet= "DSI",  col_types = c("text", "text", "numeric",
+        "text", "text", "numeric",
+        "numeric", "numeric", "numeric"))
+
+dat <- dat %>% 
+  mutate(
+    Province = as.factor(Province),
+    Season = as.factor (Season),
+    Stage = as.factor (Stage))
+
+dat %>%
+  count(Province, Season, Stage) %>%
+  count(Province, Season, name = "n_stages") %>%
+  kable(caption= "Number ofsprays per Season x Province")
+
+sub_kzn2425 <- dat %>% filter(Province == "KwaZulu-Natal", Season == "2024/2025") %>% droplevels()
+sub_kzn2526 <- dat %>% filter(Province == "KwaZulu-Natal", Season == "2025/2026") %>% droplevels()
+sub_lim2425 <- dat %>% filter(Province == "Limpopo",       Season == "2024/2025") %>% droplevels()
+sub_lim2526 <- dat %>% filter(Province == "Limpopo",       Season == "2025/2026") %>% droplevels()
+
+```
+
+## Summary Statistics
+
+```{r summary stats}
+summary_spray <- tibble(
+  Province = c("KwaZulu-Natal", "KwaZulu-Natal", "Limpopo", "Limpopo"),
+  Season   = c("2024/2025", "2025/2026", "2024/2025", "2025/2026"),
+  n_treatments = c(nlevels(sub_kzn2425$Stage), nlevels(sub_kzn2526$Stage), nlevels(sub_lim2425$Stage), nlevels(sub_lim2526$Stage)),
+  n_Plants = c(length(sub_kzn2425$Replicate), length(sub_kzn2526$Replicate), length(sub_lim2425$Replicate), length(sub_lim2526$Replicate)),
+  Plants_Trt = n_Plants/n_treatments,
+  Mean     = round(c(mean(sub_kzn2425$Overall), mean(sub_kzn2526$Overall), mean(sub_lim2425$Overall), mean(sub_lim2526$Overall)), 2),
+  Median     = round(c(median(sub_kzn2425$Overall), median(sub_kzn2526$Overall), median(sub_lim2425$Overall), median(sub_lim2526$Overall)), 2),
+  SD       = round(c(sd(sub_kzn2425$Overall), sd(sub_kzn2526$Overall), sd(sub_lim2425$Overall), sd(sub_lim2526$Overall)), 2),
+  Min      = round(c(min(sub_kzn2425$Overall), min(sub_kzn2526$Overall), min(sub_lim2425$Overall), min(sub_lim2526$Overall)), 2),
+  Max      = round(c(max(sub_kzn2425$Overall), max(sub_kzn2526$Overall), max(sub_lim2425$Overall), max(sub_lim2526$Overall)), 2)
+)
+
+kable(summary_spray, caption = "Summary statistics of Overall DSI by Season and Province")
+
+```
+
+## Normality Checks
+
+```{r verify-shapiro-resid}
+resid_p_kzn2425 <- shapiro.test(residuals(aov(Overall ~ Stage, data = sub_kzn2425)))$p.value
+resid_p_kzn2526 <- shapiro.test(residuals(aov(Overall ~ Stage, data = sub_kzn2526)))$p.value
+resid_p_lim2425 <- shapiro.test(residuals(aov(Overall ~ Stage, data = sub_lim2425)))$p.value
+resid_p_lim2526 <- shapiro.test(residuals(aov(Overall ~ Stage, data = sub_lim2526)))$p.value
+
+check_tbl <- tibble(
+  Province       = c("KwaZulu-Natal", "KwaZulu-Natal", "Limpopo", "Limpopo"),
+  Season         = c("2024/2025", "2025/2026", "2024/2025", "2025/2026"),
+  resid_p        = round(c(resid_p_kzn2425, resid_p_kzn2526, resid_p_lim2425, resid_p_lim2526), 4))
+ 
+kable(check_tbl, caption = "Shapiro-Wilk p-value")
+
+```
+
+## Homogeneity of variance
+
+```{r variance-checks}
+car::leveneTest(Overall ~ Stage, data = sub_kzn2425)
+car::leveneTest(Overall ~ Stage, data = sub_kzn2526)
+car::leveneTest(Overall ~ Stage, data = sub_lim2425)
+car::leveneTest(Overall ~ Stage, data = sub_lim2526)
+
+```
+
+### ANOVA & Tukey's HSD
+
+```{r parametric-tests}
+# ANOVA Summary
+aov_kzn2425 <- aov(Overall ~ Stage, data = sub_kzn2425)
+aov_kzn2526 <- aov(Overall ~ Stage, data = sub_kzn2526)
+aov_lim2425 <- aov(Overall ~ Stage, data = sub_lim2425)
+aov_lim2526 <- aov(Overall ~ Stage, data = sub_lim2526)
+
+summary(aov_kzn2425);plot(aov_kzn2425)
+summary(aov_kzn2526);plot(aov_kzn2526)
+summary(aov_lim2425);plot(aov_lim2425)
+summary(aov_lim2526);plot(aov_lim2526)
+
+```
+```{r Tukey post-hoc}
+glht_kzn2526 <- glht(aov_kzn2526, linfct = mcp(Stage = "Tukey"))
+summary(glht_kzn2526)
+
+glht_lim2425 <- glht(aov_lim2425, linfct = mcp(Stage = "Tukey"))
+summary(glht_lim2425)
+
+glht_lim2526 <- glht(aov_lim2526, linfct = mcp(Stage = "Tukey"))
+summary(glht_lim2526)
+
+
+```
+
+
+```{r graphs}
+
+ggboxplot(dat, x = "Stage", y = "Overall", color = "Province", palette = "jco") +
+  #stat_compare_means(method = "anova") + 
+  #facet_wrap(~Province , nrow= 2)+
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - By Province") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+
+ggboxplot(dat, x = "Stage", y = "Overall", color = "Season", palette = "jco") +
+  #stat_compare_means(method = "anova") + 
+  #facet_wrap(~Province , nrow= 2)+
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - By Season") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+
+ggboxplot(sub_kzn2425, x = "Stage", y = "Overall", color = "Stage", palette = "jco") +
+  #ggdotplot(sub_kzn2425, x = "Stage", y = "Overall", color = "Stage", palette = "jco")
+  stat_compare_means(method = "anova") +
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - KZN 2024/2025") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+ggboxplot(sub_kzn2526, x = "Stage", y = "Overall", color = "Stage", palette = "jco") +
+  stat_compare_means(method = "anova") +
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - KZN 2025/2026") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+ggboxplot(sub_lim2425, x = "Stage", y = "Overall", color = "Stage", palette = "jco") +
+  stat_compare_means(method = "anova") +
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - Limpopo 2024/2025") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+ggboxplot(sub_lim2526, x = "Stage", y = "Overall", color = "Stage", palette = "jco") +
+  stat_compare_means(method = "anova") +
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - Limpopo 2025/2026") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+```
+
+### Mixed Effects Model for Overall DSI by Stage
+  
+Aaron: 
+
+Can you show me how you calculated Overall?
+
+
+
+I suggest we simultaneously evaluate the influence of stage, season, and province on overall DSI in one model. This would accomplish a few things. First, it would increase your overall sample size and your power. It would also allow us to partition out the effects of season and province on DSI, which might obscure the treatment effect. It would be helpful to know if DSI varied by season and whether this effect was consistent between provinces. 
+
+```{r  mixed model}
+
+library(lme4)
+library(lmerTest) 
+is.factor(dat$Stage);is.factor(dat$Season)
+
+head(dat)
+hist(dat$Overall)
+
+# Fit model with Season and Province as fixed effects (analagous to 2-way ANOVA)
+
+model <- lm(
+  Overall ~ Stage + Season + Province, data = dat)
+
+summary(model)
+anova(model) # test the fixed effect of Stage
+plot(model); qqnorm(residuals(model)); qqline(residuals(model)) # check model assumptions
+
+# model resids don't look good
+
+
+# Fit model with Season:Province as random effect with a beta distribution
+
+library(glmmTMB)
+
+n_obs <- nrow(dat)
+
+model.dat <- dat %>%
+  mutate(
+    DSI_prop = Overall / 100,
+    DSI_beta = (DSI_prop * (n_obs - 1) + 0.5) / n_obs, # apply the Smithson–Verkuilen adjustment
+    Stage = factor(Stage),
+    Season = factor(Season),
+    Province = factor(Province)
+  )
+
+model.dat %>%
+  select(Overall, DSI_prop, DSI_beta) %>%
+  arrange(DSI)
+
+
+model_beta <- glmmTMB(
+  DSI_beta ~ Stage + Season + Province,
+  family = beta_family(link = "logit"),
+  data = model.dat
+)
+
+summary(model_beta)
+
+
+
+
+
+```
+
+
+
+### Friedmans Test and Wilcoxon post-hoc
+The measurements for tip, middle and cordon were repeated measurements for the same plant. 
+
+```{r data per part}
+
+idata_part <- data.frame(Part = factor(c("Cordon", "Middle", "Tip"), levels = c("Cordon", "Middle", "Tip")))
+```
+
+```{r province_season part-long}
+part_long_kzn2425 <- sub_kzn2425 %>%
+  mutate(Plant = interaction(Stage, Replicate, drop = TRUE)) %>%
+  pivot_longer(cols = c(Cordon, Middle, Tip), names_to = "Part", values_to = "DSI") %>%
+  mutate(Part = factor(Part, levels = c("Cordon", "Middle", "Tip")))
+
+part_long_kzn2526 <- sub_kzn2526 %>%
+  mutate(Plant = interaction(Stage, Replicate, drop = TRUE)) %>%
+  pivot_longer(cols = c(Cordon, Middle, Tip), names_to = "Part", values_to = "DSI") %>%
+  mutate(Part = factor(Part, levels = c("Cordon", "Middle", "Tip")))
+
+part_long_lim2425 <- sub_lim2425 %>%
+  mutate(Plant = interaction(Stage, Replicate, drop = TRUE)) %>%
+  pivot_longer(cols = c(Cordon, Middle, Tip), names_to = "Part", values_to = "DSI") %>%
+  mutate(Part = factor(Part, levels = c("Cordon", "Middle", "Tip")))
+
+part_long_lim2526 <- sub_lim2526 %>%
+  mutate(Plant = interaction(Stage, Replicate, drop = TRUE)) %>%
+  pivot_longer(cols = c(Cordon, Middle, Tip), names_to = "Part", values_to = "DSI") %>%
+  mutate(Part = factor(Part, levels = c("Cordon", "Middle", "Tip")))
+
+```
+
+```{part-means}
+sub_kzn2425 %>% summarise(across(c(Cordon, Middle, Tip), ~round(mean(.), 2)))
+
+sub_kzn2526 %>% summarise(across(c(Cordon, Middle, Tip), ~round(mean(.), 2)))
+
+sub_lim2425 %>% summarise(across(c(Cordon, Middle, Tip), ~round(mean(.), 2)))
+
+sub_lim2526 %>% summarise(across(c(Cordon, Middle, Tip), ~round(mean(.), 2)))
+```
+
+```{r kzn2425-friedman}
+friedman.test(DSI ~ Part | Plant, data = part_long_kzn2425)
+
+friedman.test(DSI ~ Part | Plant, data = part_long_kzn2526)
+
+friedman.test(DSI ~ Part | Plant, data = part_long_lim2425)
+
+friedman.test(DSI ~ Part | Plant, data = part_long_lim2526)
+
+```
+P<0.05 is significant and post-hoc paired Wilcoxon signed-rank, Holm-adjusted was done. 
+Found neither seasons for Limpopo were significant, so no post-hoc done.
+
+```{r Wilcoxon posthoc}
+p_raw_kzn2425 <- c(
+  Cordon_v_Middle = wilcox.test(sub_kzn2425$Cordon, sub_kzn2425$Middle, paired = TRUE)$p.value,
+  Cordon_v_Tip    = wilcox.test(sub_kzn2425$Cordon, sub_kzn2425$Tip,    paired = TRUE)$p.value,
+  Middle_v_Tip    = wilcox.test(sub_kzn2425$Middle, sub_kzn2425$Tip,    paired = TRUE)$p.value
+)
+p.adjust(p_raw_kzn2425, method = "holm")
+
+p_raw_kzn2526 <- c(
+  Cordon_v_Middle = wilcox.test(sub_kzn2526$Cordon, sub_kzn2526$Middle, paired = TRUE)$p.value,
+  Cordon_v_Tip    = wilcox.test(sub_kzn2526$Cordon, sub_kzn2526$Tip,    paired = TRUE)$p.value,
+  Middle_v_Tip    = wilcox.test(sub_kzn2526$Middle, sub_kzn2526$Tip,    paired = TRUE)$p.value
+)
+p.adjust(p_raw_kzn2526, method = "holm")
+```
+
+```{r part-plot}
+my_comparison <- list(
+  c("Cordon", "Middle"), c("Middle", "Tip"), c("Cordon", "Tip"))
+
+
+ggboxplot(part_long_kzn2425, x = "Part", y = "DSI", color = "Part", palette = "jco") +
+  #ggdotplot(part_long_kzn2425, x = "Part", y = "DSI", color = "Part", palette = "jco") +
+  
+  labs(x = "Plant part", y = "DSI (%)", title = "DSI by plant part - KZN 2024/2025") +
+  scale_y_continuous(limits = c(0, 50), breaks = seq(0, 50, by = 5)) +
+  theme(legend.position = "none") +
+  stat_compare_means(comparison = my_comparison,
+                     method = "wilcox.test",
+                     label = "p.signif",
+                     label.y = c(30, 35, 45))
+
+ggboxplot(part_long_kzn2526, x = "Part", y = "DSI", color = "Part", palette = "jco") +
+  labs(x = "Plant part", y = "DSI (%)", title = "DSI by plant part - KZN 2025/2026") +
+  scale_y_continuous(limits = c(0, 40), breaks = seq(0, 40, by = 5)) +
+  theme(legend.position = "none") +
+  stat_compare_means(comparison = my_comparison,
+                     method = "wilcox.test",label = "p.signif",
+                     label.y = c(20, 25, 30))
+
+ggboxplot(part_long_lim2425, x = "Part", y = "DSI", color = "Part", palette = "jco") +
+  labs(x = "Plant part", y = "DSI (%)", title = "DSI by plant part - Limpopo 2024/2025") +
+  scale_y_continuous(limits = c(0, 50), breaks = seq(0, 50, by = 5)) +
+  theme(legend.position = "none") 
+
+ggboxplot(part_long_lim2526, x = "Part", y = "DSI", color = "Part", palette = "jco") +
+  labs(x = "Plant part", y = "DSI (%)", title = "DSI by plant part - Limpopo 2025/2026") +
+  scale_y_continuous(limits = c(0, 40), breaks = seq(0, 40, by = 5)) +
+  theme(legend.position = "none") 
+
+```
+I have kept the y-axis of all of the graphs the same for now to have an easy comparison in DSI across the different seasons and treatments. 
