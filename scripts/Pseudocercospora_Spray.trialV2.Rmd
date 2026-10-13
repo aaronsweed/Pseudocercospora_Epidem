@@ -57,7 +57,7 @@ library(broom.mixed)
 
 ```{r data-prep}
 #Set working directory and import dataset 
-dat <- read_excel("./data/Pseudocercospora_disease_severity_Aug2026.xlsx",  sheet= "DSI",  col_types = c("text", "text", "numeric",
+dat <- read_excel("../data/Pseudocercospora_disease_severity_Aug2026.xlsx",  sheet= "DSI",  col_types = c("text", "text", "numeric",
         "text", "text", "numeric",
         "numeric", "numeric", "numeric"))
 
@@ -67,20 +67,19 @@ dat <- dat %>%
       Stage == "Control" ~ "Control", 
       Stage == "Curative" ~"Curative",
       Stage == "Full_cover" ~"Full_cover",
-      Stage ==
-      Stage %in% c("Bud_break",  "Flower_buds","Flowering") ~ "Pre-reproductive",
+      Stage == "Flowering" ~ "Flowering", 
+      Stage %in% c("Bud_break",  "Flower_buds") ~ "Pre-fruit development",
       Stage %in% c("Halfway_expanded","Fruit_set",
         "End_expansion",
         "Fruit_development",
         "Month_before_harvest") ~ "Post-fruit development",
-
       TRUE ~ NA_character_
     ),
     Treatment_period = factor(
       Treatment_period,
       levels = c(
         "Control", "Curative", "Full_cover",
-        "Pre-reproductive",
+        "Pre-fruit development", "Flowering",
         "Post-fruit development"
       )
     ),
@@ -117,9 +116,6 @@ with(dat, table(Stage, Season))
 
 with(dat, table(Season, Treatment_period))
 with(dat, table(Stage, Province))
-
-
-
 
 ```
 
@@ -392,7 +388,11 @@ Season_rando_Period =
 
 Below is the model selection table for candidate models
 
+<<<<<<< HEAD
 ```{r mod comparison, fig.height= 12, fig.width= 6}
+=======
+```{r mod comparison, fig.height= 12, fig. width= 6}
+>>>>>>> 2cf2dccd0c952d6173e79938a2ee63bf1f759f6c
 
 ################################################
 #Model Comparisons
@@ -887,7 +887,11 @@ ggplot(
 ####################################
 
 dat_long<- pivot_longer(dat, cols = c(Tip, Middle, Cordon, Overall), names_to = "Plant_part", values_to = "DSI") |> 
+<<<<<<< HEAD
    dplyr::mutate(
+=======
+   mutate(
+>>>>>>> 2cf2dccd0c952d6173e79938a2ee63bf1f759f6c
     DSI_prop = DSI / 100, # convert DSI back to proportion
     DSI_beta = (DSI_prop * (n_obs - 1) + 0.5) / n_obs, # apply the Smithson–Verkuilen adjustment
     Stage = factor(Stage),
@@ -904,6 +908,7 @@ ggboxplot(dat_long, x = "Province", y = "DSI", color = "Plant_part", palette = "
   scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
 
+<<<<<<< HEAD
 # ggboxplot(dat_long, x = "Treatment_period", y = "DSI", color = "Plant_part", palette = "jco") +
 #   #stat_compare_means(method = "anova") + 
 #   #facet_wrap(~Province , nrow= 2)+
@@ -917,6 +922,21 @@ ggboxplot(dat_long, x = "Province", y = "DSI", color = "Plant_part", palette = "
 #   labs(x = "", y = "DSI (%)", title =  "DSI - By part and Province") +
 #   scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
 #   theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+=======
+ggboxplot(dat_long, x = "Treatment_period", y = "DSI", color = "Plant_part", palette = "jco") +
+  #stat_compare_means(method = "anova") + 
+  #facet_wrap(~Province , nrow= 2)+
+  labs(x = "", y = "DSI (%)", title =  "DSI - By part and Province") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+
+ggboxplot(dat_long, x = "Season", y = "DSI", color = "Plant_part", palette = "jco") +
+  #stat_compare_means(method = "anova") + 
+  #facet_wrap(~Province , nrow= 2)+
+  labs(x = "", y = "DSI (%)", title =  "DSI - By part and Province") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+>>>>>>> 2cf2dccd0c952d6173e79938a2ee63bf1f759f6c
 
 ggplot(dat_part_sum, aes(x = Stage, y = median, color = Plant_part)) +
   geom_point(position= position_dodge(width =0.5))+ coord_flip()+
