@@ -2,7 +2,7 @@
 title: "Pseudocercospora Spray trial"
 author: "C.A. Theron"
 date: "2026-08-26"
-tput:
+output:
   html_document:
     theme: cerulean        # Choose a modern Bootstrap theme
     highlight: tango       # Style your code syntax highlighting
@@ -12,7 +12,7 @@ tput:
     code_folding: hide     # Allow readers to show/hide R code blocks
     df_print: paged        # Render data frames as beautiful interactive tables
 ---
-### Meeting Notes
+# Meeting Notes
 
 30 Sept 2026:
 
@@ -24,7 +24,7 @@ tput:
 - Cheyenne needs results by mid-Nov for industry presentation
 
 
-### Overview
+# Overview
 1. During which developmental stages should chemicals be applied to reduce disease severity of Pseudocercospora spot and rot disease?
 
 2. Is disease severity higher at certain parts of the plant (i.e. cordon, middle or tip of branch)?
@@ -35,14 +35,16 @@ knitr::opts_chunk$set(
 	fig.align = "center",
 	fig.height = 4.5,
 	fig.width = 7,
-	message = FALSE
+	message = FALSE, 
+	comment= FALSE, 
+	warning = FALSE
 )
 # Load libraries
 library(tidyverse)
 library(readxl)
 library(car)
 library(multcomp)
-library(FSA)
+#library(FSA)
 library(knitr)
 library(ggpubr)
 library(broom)
@@ -55,16 +57,36 @@ library(performance)
 library(broom.mixed)
 ```
 
-### Import and filter dataset
+# Import and filter dataset
 
 ```{r data-prep}
 #Set working directory and import dataset 
-dat <- read_excel("C:/Users/aweed/OneDrive - DOI/Documents/Projects/Pseudocercospora/data/Pseudocercospora_disease_severity_Aug2026.xlsx",  sheet= "DSI",  col_types = c("text", "text", "numeric",
+dat <- read_excel("../data/Pseudocercospora_disease_severity_Aug2026.xlsx",  sheet= "DSI",  col_types = c("text", "text", "numeric",
         "text", "text", "numeric",
         "numeric", "numeric", "numeric"))
 
 dat <- dat %>% 
   mutate(
+     Treatment_period = case_when( # collapse some stage treatments into 3 categories
+      Stage == "Control" ~ "Control", 
+      Stage == "Curative" ~"Curative",
+      Stage == "Full_cover" ~"Full_cover",
+      Stage %in% c("Bud_break",  "Flower_buds","Flowering") ~ "Pre-reproductive",
+      Stage %in% c("Halfway_expanded","Fruit_set",
+        "End_expansion",
+        "Fruit_development",
+        "Month_before_harvest") ~ "Post-fruit development",
+
+      TRUE ~ NA_character_
+    ),
+    Treatment_period = factor(
+      Treatment_period,
+      levels = c(
+        "Control", "Curative", "Full_cover",
+        "Pre-reproductive",
+        "Post-fruit development"
+      )
+    ),
     Province = as.factor(Province),
     Season = as.factor (Season),
      Stage = factor(
@@ -75,23 +97,48 @@ dat <- dat %>%
     )
   )
 
+
 levels(dat$Stage)
+levels(dat$Treatment_period)
 
 dat %>%
   count(Province, Season, Stage) %>%
   count(Province, Season, name = "n_stages") %>%
   kable(caption= "Number ofsprays per Season x Province")
 
+# check the number of replicates by experimental grouping
+
+head(dat)
+hist(dat$Overall)
+
+str(dat)
+table(dat$Stage)
+table(dat$Season)
+table(dat$Province)
+
+with(dat, table(Stage, Season))
+
+with(dat, table(Season, Treatment_period))
+with(dat, table(Stage, Province))
+
+
+
+
+```
+
+
+# Summary Statistics
+
+```{r summary stats}
+
+
+# subset tables by Province and Season
+
 sub_kzn2425 <- dat %>% filter(Province == "KwaZulu-Natal", Season == "2024/2025") %>% droplevels()
 sub_kzn2526 <- dat %>% filter(Province == "KwaZulu-Natal", Season == "2025/2026") %>% droplevels()
 sub_lim2425 <- dat %>% filter(Province == "Limpopo",       Season == "2024/2025") %>% droplevels()
 sub_lim2526 <- dat %>% filter(Province == "Limpopo",       Season == "2025/2026") %>% droplevels()
 
-```
-
-## Summary Statistics
-
-```{r summary stats}
 summary_spray <- tibble(
   Province = c("KwaZulu-Natal", "KwaZulu-Natal", "Limpopo", "Limpopo"),
   Season   = c("2024/2025", "2025/2026", "2024/2025", "2025/2026"),
@@ -108,6 +155,806 @@ summary_spray <- tibble(
 kable(summary_spray, caption = "Summary statistics of Overall DSI by Season and Province")
 
 ```
+
+# Overall DSI
+
+## Exploratory Plots 
+
+
+```{r graphs}
+
+ggboxplot(dat, x = "Stage", y = "Overall", color = "Province", palette = "jco") +
+  #stat_compare_means(method = "anova") + 
+  #facet_wrap(~Province , nrow= 2)+
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - By Province") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+
+ggboxplot(dat, x = "Treatment_period", y = "Overall", color = "Province", palette = "jco") +
+  #stat_compare_means(method = "anova") + 
+  #facet_wrap(~Province , nrow= 2)+
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - By Province") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+
+
+ggboxplot(dat, x = "Stage", y = "Overall", color = "Season", palette = "jco") +
+  #stat_compare_means(method = "anova") + 
+  #facet_wrap(~Province , nrow= 2)+
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - By Season") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+
+ggboxplot(dat, x = "Treatment_period", y = "Overall", color = "Season", palette = "jco") +
+  #stat_compare_means(method = "anova") + 
+  #facet_wrap(~Province , nrow= 2)+
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - By Season") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+
+ggboxplot(sub_kzn2425, x = "Stage", y = "Overall", color = "Stage", palette = "jco") +
+  #ggdotplot(sub_kzn2425, x = "Stage", y = "Overall", color = "Stage", palette = "jco")
+  stat_compare_means(method = "anova") +
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - KZN 2024/2025") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+ggboxplot(sub_kzn2526, x = "Stage", y = "Overall", color = "Stage", palette = "jco") +
+  stat_compare_means(method = "anova") +
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - KZN 2025/2026") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+ggboxplot(sub_lim2425, x = "Stage", y = "Overall", color = "Stage", palette = "jco") +
+  stat_compare_means(method = "anova") +
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - Limpopo 2024/2025") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+ggboxplot(sub_lim2526, x = "Stage", y = "Overall", color = "Stage", palette = "jco") +
+  stat_compare_means(method = "anova") +
+  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - Limpopo 2025/2026") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+```
+
+
+
+## GLM Model for Overall DSI by Stage
+  
+Methods description:
+
+Notes:
+
+The experimental design has a low sample size (3 per stage treatment) but each of the 11 stage treatments were not uniformly distributed among Seasons and Provinces. 
+
+- The following treatments were conducted in each Season:  Control, Bud_break, Flowering, Fruit_set, Curative, and Full_Cover
+
+- The following treatments were conducted in each Province: Control, Bud_break, Flower_buds, Flowering, Fruit_set, Fruit_development, Curative, and Full_Cover
+
+- The following treatments were conducted in only one Season: 2024/2025: Flower_buds, Fruit_development; 2025/2026: Halfway_expanded, End_expansion, Month_before_harvest
+
+- The following treatments were conducted in only one Province: KZN: End_expansion and Month_before_harvest                               
+
+These observations prevent fitting a model with a 3-way: DSI ~ Stage X Season X Province model.
+
+**Model 1 - All treatments:** To retain the maximum amount of statistical power I  fit the model: DSI ~ Stage X Season + Province.
+
+We modeled disease severity index (DSI) using a generalized linear model (GLM fitted with glmmTMB in R). DSI was expressed as a proportion and adjusted for observations at the boundary of zero so that all values fell within the interval (0, 1). The model assumed a beta-distributed response with a logit link and included disease-development Stage, Season, and Province as fixed effects. Statistical differences of the main effects were evaluated with Tukey test of the least squared means.
+
+
+**Model 2:** Since the replication is so low per treatment I  wonder what information you would be giving up by collapsing treatments End_expansion and Month_before_harvest as "Fruit Development"
+
+
+
+## **Model 1 - All treatments** 
+
+
+Below a variety of model structures were fit to assess goodness of fit and appropriateness of model structure and associated information content. 
+
+
+```{r  mixed model}
+
+ is.factor(dat$Stage);is.factor(dat$Season)
+
+
+############################################################################
+# Fit model with Season and Province as fixed effects
+############################################################################
+
+model <- lm(
+  Overall ~ Stage + Season + Province, data = dat)
+
+summary(model)
+anova(model) # test the fixed effect of Stage
+plot(model); qqnorm(residuals(model)); qqline(residuals(model)) # check model assumptions
+
+# model resids don't look good
+
+############################################################################
+# Fit and compare models with a beta distribution
+############################################################################
+
+# create new dataframe with updated variables
+
+n_obs <- nrow(dat) # determine number of observations in data to scale DSI prop
+
+model.dat <- dat %>%
+  mutate(
+    DSI_prop = Overall / 100, # convert DSI back to proportion
+    DSI_beta = (DSI_prop * (n_obs - 1) + 0.5) / n_obs, # apply the Smithson–Verkuilen adjustment
+    Stage = factor(Stage),
+    Season = factor(Season),
+    Province = factor(Province)
+  )
+
+range(model.dat$Overall, na.rm = TRUE)
+range(model.dat$DSI_prop, na.rm = TRUE)
+range(model.dat$DSI_beta, na.rm = TRUE)
+
+# plot distributions of DSI_prop per stage and season
+ggplot(model.dat, aes(x = DSI_prop)) +
+  geom_histogram(bins = 20) +
+  facet_wrap(~ Stage) +
+  theme_bw() +
+  labs(
+    x = "Disease Severity Index",
+    y = "Number of observations",
+    title = "Distribution of DSI by Stage"
+  )
+
+#########################################
+##Fit beta dist'n models
+##########################################
+models <- list(
+
+ # Stage without Season
+  Stage_only =
+    glmmTMB(
+      DSI_beta ~ Stage,
+      family = beta_family(link = "logit"),
+      data = model.dat
+    ),
+  
+  # Season without Stage
+  Season_only =
+    glmmTMB(
+      DSI_beta ~ Season,
+      family = beta_family(link = "logit"),
+      data = model.dat
+    ),
+  
+  # Province only
+  Province_only =
+    glmmTMB(
+      DSI_beta ~ Province ,
+      family = beta_family(link = "logit"),
+      data = model.dat
+    ),
+  
+   # Stage and Season
+  Stage_Season =
+    glmmTMB(
+      DSI_beta ~ Stage + Season ,
+      family = beta_family(link = "logit"),
+      data = model.dat
+    ),
+ # Stage , Season and Prov
+  Stage_Season_Prov = 
+   glmmTMB(
+  DSI_beta ~ Stage + Season + Province,
+  family = beta_family(link = "logit"),
+  data = model.dat
+),
+  
+  # Does the Stage response differ between seasons and by Province?
+  Stage_Season_Interaction =
+    glmmTMB(
+      DSI_beta ~ Stage * Season + Province ,
+      family = beta_family(link = "logit"),
+      data = model.dat
+    ), 
+# Three_Way_Interaction =
+#     glmmTMB(
+#       DSI_beta ~ Stage * Season * Province ,
+#       family = beta_family(link = "logit"),
+#       data = model.dat
+#     ),
+Three_Way_Period =
+    glmmTMB(
+      DSI_beta ~ Treatment_period * Season * Province ,
+      family = beta_family(link = "logit"),
+      data = model.dat
+    ),
+
+Season_rando_Stage =
+  
+  glmmTMB(
+      DSI_beta ~ Stage * Province + (1|Season),
+      family = beta_family(link = "logit"),
+      data = model.dat
+    ),
+
+Season_rando_Period =
+  
+  glmmTMB(
+      DSI_beta ~ Treatment_period * Province + (1|Season),
+      family = beta_family(link = "logit"),
+      data = model.dat
+    )
+ 
+
+)
+
+
+
+```
+
+### Model comparison
+
+Below is the model selection table for candidate models
+
+```{r mod comparison, fig.height= 12, fig. width= 6}
+
+################################################
+#Model Comparisons
+################################################
+model_selection <- purrr::map_dfr(
+  models,
+  ~ tibble(
+    logLik = as.numeric(logLik(.x)),
+    AIC = AIC(.x),
+    BIC = BIC(.x),
+    npar = attr(logLik(.x), "df")
+  ),
+  .id = "Model"
+) %>%
+  arrange(AIC) %>%
+  mutate(
+    Delta_AIC = AIC - min(AIC),
+    AIC_weight =
+      exp(-0.5 * Delta_AIC) /
+      sum(exp(-0.5 * Delta_AIC))
+  )
+
+model_selection %>%
+  kable(
+    caption = "Model selection results for beta mixed-effects models of disease severity index.",
+    col.names = c(
+      "Model",
+      "Log-likelihood",
+      "AIC",
+      "BIC",
+      "Parameters",
+      "ΔAIC",
+      "AIC weight"
+    )
+  ) 
+
+
+# Compile fixed effects from all models
+
+fixed_effects <- purrr::imap_dfr(
+  models,
+  function(model, model_name) {
+    broom.mixed::tidy(
+      model,
+      effects = "fixed",
+      conf.int = TRUE
+    ) |>
+      mutate(model = model_name, .before = 1)
+  }
+)
+
+# Compare the same fixed-effect terms across models
+
+fixed_effects |> 
+  dplyr::select(model, term, estimate, std.error, conf.low, conf.high, p.value) |>
+  arrange(term, model)
+
+# compare fixed effects estimate by model structure
+
+fixed_effects |>
+   filter(
+    !is.na(estimate),
+    !is.na(conf.low),
+    !is.na(conf.high)
+  ) |>
+
+ggplot(aes(x = estimate,
+           y = term,
+           color = model)) +
+  geom_point(
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_errorbarh(
+    aes(xmin = conf.low,
+        xmax = conf.high),
+    position = position_dodge(width = 0.5),
+    height = 0.2
+  ) +
+  geom_vline(xintercept = 0, linetype = 2) +
+  theme_classic()
+
+
+
+```
+
+### Model diagnostics
+
+
+```{r model diagnostics}
+
+################################################
+# Examine top model diagnostics and predictions
+################################################
+
+# First select a model to evaluate
+
+model_sel<-models[["Season_rando_Stage"]]
+
+# model coeffs are on logit scale
+summary(model_sel)
+
+# check convergence
+performance::check_convergence(model_sel)
+
+# check singularity
+performance::check_singularity(model_sel)
+
+# check zero-inflation
+
+sum(model.dat$Overall == 0, na.rm = TRUE)
+
+mean(model.dat$Overall == 0, na.rm = TRUE)
+
+#residual diagnostics (DHarma)
+
+simulationOutput <- simulateResiduals(
+  fittedModel = model_sel,
+  n = 1000
+)
+
+plot(simulationOutput) #approximately uniform and randomly distributed?
+
+testUniformity(simulationOutput)
+testDispersion(simulationOutput)
+testZeroInflation(simulationOutput)
+
+
+testCategorical(
+  simulationOutput,
+  catPred = model.dat$Stage
+)
+
+testCategorical(
+  simulationOutput,
+  catPred = model.dat$Season
+)
+
+testCategorical(
+  simulationOutput,
+  catPred = model.dat$Province
+)
+
+
+# Check the beta-model dispersion parameter
+
+sigma(model_sel) #Higher sigma corresponds to a more concentrated beta distribution around the predicted mean
+
+# examine random effects (if any)
+
+ranef(model_sel) 
+
+VarCorr(model_sel) #If the variance of Season:Province is essentially zero, there may be little detectable variation among provinces within seasons.Value is the standard deviation of the random intercept on the logit scale
+
+
+```
+### Estimated marginal means
+
+#### Compare Stage DSI within a Season
+
+```{r marginal means}
+
+
+# note that when df= Inf means that the inference is based on a normal (Wald) approximation, rather than a t distribution with estimated finite degrees of freedom. emmeans() commonly uses asymptotic inference rather than a finite-sample degrees-of-freedom approximation
+
+#############################
+# Does DSI vary by Stage?
+#############################
+# Within 2024/2025, which Stages differ in DSI?
+# Within 2025/2026, which Stages differ in DSI?
+
+# when interaction, estimate Stage means separately within each Season
+# emms represent the model-adjusted DSI while accounting for differences among Provinces
+
+# EMM of Stage (on proportion scale) averaged over the levels of Season
+emm_stage_season <- emmeans( 
+  model_sel,
+  ~ Stage |Season,
+  type = "response"
+)
+
+#emm_stage_season # get back transformed estimates with CIs
+
+# Plot the estimated marginal means per stage 
+
+# plot(emm_stage_season, xlab = "DSI") 
+
+
+ggplot(as_tibble(emm_stage_season), aes(y = forcats::fct_rev(Stage), x = response,color= Season) ) +
+    geom_point(size = 3, position = position_dodge(width = 0.5)) +
+    geom_errorbar(
+      aes(xmin = asymp.LCL, xmax = asymp.UCL),
+      width = 0.2, position = position_dodge(width = 0.5)
+    ) +
+    labs(
+      y = "Treatment stage",
+      x = "Overall DSI (95 % C.I.)"
+    ) +
+    theme_classic(base_size = 12) +
+    theme(
+      axis.text.x = element_text(
+        angle = 45,
+        hjust = 1
+      )
+    )
+
+# Conduct contrasts among stages
+# on the logit scale
+
+# pairs(
+#   emm_stage_season,
+#   adjust = "tukey"
+# )
+
+```
+
+
+#### Compare Stages between Provinces
+
+```{r marg_seas_stage}
+
+#########################################
+# Does DSI vary between seasons?
+#########################################
+# Effect of Seasons averaged over the levels of Stage
+
+emm_stage_prov <- emmeans(
+  model_sel,
+  ~  Stage| Province,
+  type = "response"
+)
+
+# plot Estimated Disease Severity by Stage and Season
+plot(emm_stage_prov, xlab ="DSI")
+
+ggplot(as_tibble(emm_stage_prov), aes(y = forcats::fct_rev(Stage), x = response,color= Province) ) +
+    geom_point(size = 3, position = position_dodge(width = 0.5)) +
+    geom_errorbar(
+      aes(xmin = asymp.LCL, xmax = asymp.UCL),
+      width = 0.2, position = position_dodge(width = 0.5)
+    ) +
+    labs(
+      y = "Treatment stage",
+      x = "Overall DSI (95 % C.I.)"
+    ) +
+    theme_classic(base_size = 12) +
+    theme(
+      axis.text.x = element_text(
+        angle = 45,
+        hjust = 1
+      )
+    )
+
+
+```
+
+
+#### Compare stages for each Province and Season
+
+```{r emm_stage_prov}
+
+################################################
+# how does DSI vary by stage between seasons?
+#################################################
+
+
+emm_season_By_stage <- emmeans(
+  model_sel,
+  ~ Season * Stage + Province,
+  type = "response"
+) 
+
+#pairs(emm_season_By_stage,
+ # adjust = "tukey")
+
+
+# Plot for each Province and Season combination
+
+emm_df <- as.data.frame(emm_season_By_stage) |>
+  as_tibble() |>
+  filter(
+    !is.na(response),
+    !is.na(asymp.LCL),
+    !is.na(asymp.UCL)
+  ) |>
+  mutate(
+    Stage = factor(
+      Stage,
+      levels = c(
+        "Control",
+        "Bud_break",
+        "Flower_buds",
+        "Flowering",
+        "Fruit_set",
+        "Fruit_development",
+        "Halfway_expanded",
+        "End_expansion",
+        "Month_before_harvest",
+        "Curative",
+       "Full_cover"
+      )
+    )
+  )
+
+
+plot_emm <- function(data, province, season) {
+
+  ggplot(data, aes(y = forcats::fct_rev(Stage), x = response)) +
+    geom_point(size = 3) +
+    geom_errorbar(
+      aes(xmin = asymp.LCL, xmax = asymp.UCL),
+      width = 0.2
+    ) +
+    labs(
+      title = paste(province, "|", season),
+      y = "Treatment stage",
+      x = "Overall DSI (95 % C.I.)"
+    ) +
+    theme_classic(base_size = 12) +
+    theme(
+      axis.text.x = element_text(
+        angle = 45,
+        hjust = 1
+      )
+    )
+}
+
+
+ggplot(as_tibble(emm_df), aes(y = forcats::fct_rev(Stage), x = response,color= Province, shape= Season) ) +
+    geom_point(size = 3, position = position_dodge(width = 0.5)) +
+    geom_errorbar(
+      aes(xmin = asymp.LCL, xmax = asymp.UCL),
+      width = 0.2,position = position_dodge(width = 0.5)
+    ) +
+    labs(
+      y = "Treatment stage",
+      x = "Overall DSI (95 % C.I.)"
+    ) +
+    theme_classic(base_size = 12) +
+    theme(
+      axis.text.x = element_text(
+        angle = 45,
+        hjust = 1
+      )
+    )
+
+# Generate plots for every Province × Season
+
+emm_df |>
+  dplyr::group_by(Province, Season) |>
+  dplyr::group_walk(~ {
+    print(
+      plot_emm(
+        data = .x,
+        province = .y$Province[[1]],
+        season = .y$Season[[1]]
+      )
+    )
+  })
+
+```
+
+#### Summary:
+
+Based on the AIC and anova comparison the 3 way interaction model ranks as the top model for information content, however, the diagnostic tests suggest variance among seasons is not similar and some of the contrasts cannot be estimated because stages are missing from a season or province. 
+
+The DSI ~ Stage + Season + Province model has arguably as much information content as does the Stage_Season_Interaction model (and it is within 2 AIC) with 5 less parameters. In some respects this model makes the most since given the unbalanced design and the diagnostics look good. It does however preclude comparisons among each factors level combination.
+
+The fixed effects estimates were generally similar among models fit with more interaction terms: 
+- DSI was greater in KZN and lower in 2025/2026 than 2024/2025
+- the indiv stage treatment effects on DSI were similar among models, meaning that model structure did not influence whether the effect of a particular treatment was negative or positive. The only exception was for the Flower_buds 
+
+
+Results from final model:
+
+DSI ~ Stage + Season + Province
+
+- there was no treatment effect in each province during the 2025/2026 season; DSI was very low <0.1
+
+- KZN 2024/2025: Full cover, Fruit Development, and Fruit set treatments significantly reduced DSI compared to Curative, Flower Buds, Bud Break and Control. Flowering treatment was better at reducing DSI compared to the Control 
+
+- Limpopo 2024/2025:  Full cover, Fruit Development, and Fruit set treatments significantly reduced DSI compared to Curative, Flower Buds, Bud Break and Control. Flowering treatment was better at reducing DSI compared to the Control
+
+
+
+
+
+
+### Random Effects (if used)
+
+```{r random effects, eval=FALSE, include=FALSE}
+
+
+# Evaluate the random effects
+
+VarCorr(model_sel) # on logit scale
+
+
+province_re <- ranef(
+  model_sel,
+  condVar = TRUE
+)
+
+province_re # BLUPs/conditional modes of the random effects.
+
+confint(model_sel,  parm = "theta_") #confidence intervals for the variance parameters
+
+# caterpillar plot
+province_re <- ranef(model_sel)$cond$`Season:Province` %>%
+  rownames_to_column("Season_Province") %>%
+  rename(
+    Random_effect = `(Intercept)`
+  ) %>%
+  arrange(Random_effect) %>%
+  mutate(
+    Season_Province = factor(
+      Season_Province,
+      levels = Season_Province
+    )
+  )
+
+ggplot(
+  province_re,
+  aes(
+    x = Random_effect,
+    y = Season_Province
+  )
+) +
+  geom_point(size = 3) +
+  theme_bw() +
+  labs(
+    x = "Province-within-Season random effect (logit scale)",
+    y = "Season:Province",
+    title = "Variation in DSI among Provinces within Seasons"
+  )
+
+# What is the estimated DSI for this particular Province, conditional on its observed data?
+
+newdat <- model.dat %>%
+  distinct(Season, Province) %>%
+  mutate(
+    Stage = levels(model.dat$Stage)[1]
+  )
+
+newdat$predicted_DSI <- predict(
+  model_beta,
+  newdata = newdat,
+  type = "response",
+  re.form = NULL
+)
+
+newdat <- newdat %>%
+  mutate(
+    predicted_DSI = predicted_DSI * 100
+  )
+
+predict(
+  model_sel,
+  newdata = newdat,
+  type = "response",
+  re.form = NULL
+)
+
+ggplot(
+  newdat,
+  aes(
+    x = Province,
+    y = predicted_DSI
+  )
+) +
+  geom_point(size = 3) +
+  facet_wrap(~ Season) +
+  theme_bw() +
+  labs(
+    x = "Province",
+    y = "Predicted DSI (%)",
+    title = "Province-specific predicted disease severity"
+  )
+
+
+```
+
+# DSI by plant part
+
+## Exploratory Plots
+
+
+```{r graphs}
+
+
+####################################
+# create long dataset for  plotting by plant part
+####################################
+
+dat_long<- pivot_longer(dat, cols = c(Tip, Middle, Cordon, Overall), names_to = "Plant_part", values_to = "DSI") |> 
+   mutate(
+    DSI_prop = DSI / 100, # convert DSI back to proportion
+    DSI_beta = (DSI_prop * (n_obs - 1) + 0.5) / n_obs, # apply the Smithson–Verkuilen adjustment
+    Stage = factor(Stage),
+    Season = factor(Season),
+    Province = factor(Province)
+  )
+
+dat_part_sum <- dat_long |> group_by(Province, Season, Stage, Plant_part) |> summarise(median = median(DSI, na.rm= TRUE), IQR = IQR(DSI, na.rm= TRUE))
+
+ggboxplot(dat_long, x = "Province", y = "DSI", color = "Plant_part", palette = "jco") +
+  #stat_compare_means(method = "anova") + 
+  #facet_wrap(~Province , nrow= 2)+
+  labs(x = "", y = "DSI (%)", title =  "DSI - By part and Province") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+
+ggboxplot(dat_long, x = "Treatment_period", y = "DSI", color = "Plant_part", palette = "jco") +
+  #stat_compare_means(method = "anova") + 
+  #facet_wrap(~Province , nrow= 2)+
+  labs(x = "", y = "DSI (%)", title =  "DSI - By part and Province") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+
+ggboxplot(dat_long, x = "Season", y = "DSI", color = "Plant_part", palette = "jco") +
+  #stat_compare_means(method = "anova") + 
+  #facet_wrap(~Province , nrow= 2)+
+  labs(x = "", y = "DSI (%)", title =  "DSI - By part and Province") +
+  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+
+ggplot(dat_part_sum, aes(x = Stage, y = median, color = Plant_part)) +
+  geom_point(position= position_dodge(width =0.5))+ coord_flip()+
+  #geom_boxplot(position= position_dodge(width =0.5))+ 
+  #stat_compare_means(method = "anova") + 
+  facet_wrap(~Province , nrow= 2)+
+  labs(x = "", y = "DSI (%)", title =  "DSI - By part and Province") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")+
+  theme_bw()
+
+```
+
+## Model for DSI per plant part
+
+```{r plt_part_mod}
+
+m_common <- glmmTMB(
+  DSI_beta ~ PlantPart + Stage + Season + Province +
+    (1 | Replicate),
+  family = beta_family(link = "logit"),
+  data = model.dat
+)
+
+m_part_effects <- glmmTMB(
+  DSI_beta ~ PlantPart * (Stage + Season + Province) +
+    (1 | Replicate),
+  family = beta_family(link = "logit"),
+  data = model.dat
+)
+
+```
+
+
+
+# Older analyses
 
 ## Normality Checks
 
@@ -161,50 +1008,6 @@ summary(glht_lim2425)
 glht_lim2526 <- glht(aov_lim2526, linfct = mcp(Stage = "Tukey"))
 summary(glht_lim2526)
 
-
-```
-
-
-```{r graphs}
-
-ggboxplot(dat, x = "Stage", y = "Overall", color = "Province", palette = "jco") +
-  #stat_compare_means(method = "anova") + 
-  #facet_wrap(~Province , nrow= 2)+
-  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - By Province") +
-  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
-
-ggboxplot(dat, x = "Stage", y = "Overall", color = "Season", palette = "jco") +
-  #stat_compare_means(method = "anova") + 
-  #facet_wrap(~Province , nrow= 2)+
-  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - By Season") +
-  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
-
-ggboxplot(sub_kzn2425, x = "Stage", y = "Overall", color = "Stage", palette = "jco") +
-  #ggdotplot(sub_kzn2425, x = "Stage", y = "Overall", color = "Stage", palette = "jco")
-  stat_compare_means(method = "anova") +
-  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - KZN 2024/2025") +
-  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
-
-ggboxplot(sub_kzn2526, x = "Stage", y = "Overall", color = "Stage", palette = "jco") +
-  stat_compare_means(method = "anova") +
-  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - KZN 2025/2026") +
-  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
-
-ggboxplot(sub_lim2425, x = "Stage", y = "Overall", color = "Stage", palette = "jco") +
-  stat_compare_means(method = "anova") +
-  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - Limpopo 2024/2025") +
-  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
-
-ggboxplot(sub_lim2526, x = "Stage", y = "Overall", color = "Stage", palette = "jco") +
-  stat_compare_means(method = "anova") +
-  labs(x = "Spray-timing stage", y = "Overall DSI (%)", title = "Overall DSI - Limpopo 2025/2026") +
-  scale_y_continuous(limits = c(0, 35), breaks = seq(0, 35, by = 5)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
 
 ```
 
@@ -317,452 +1120,3 @@ ggboxplot(part_long_lim2526, x = "Part", y = "DSI", color = "Part", palette = "j
 I have kept the y-axis of all of the graphs the same for now to have an easy comparison in DSI across the different seasons and treatments.
 
 
-### Mixed Effects Model for Overall DSI by Stage
-  
-Aaron: 
-
-Do you want to know if DSI varies by plant part (Cordon, Middle, Tip?)
-- Cheyenne: yes, this would be interesting
-
-I suggest we simultaneously evaluate the influence of stage, season, and province on overall DSI in one model. This would accomplish a few things. First, it would increase your overall sample size and your power. It would also allow us to partition out the effects of season and province on DSI, which might obscure the treatment effect. It would be helpful to know if DSI varied by season and whether this effect was consistent between provinces. 
-
-
-Methods description:
-
-Observations
-
-- The design is slightly unbalanced with respect to the number and types of stage treatment names used between seasons: I assume they weren't monitored rather than missing at random.This creates issues when trying to analyze two and 3 way interactions. 
-
-- only a few zeros so not terribly zero-inflated
-
-- 
-
-Modeling: 
-
-We modeled disease severity index (DSI) using a generalized linear model (GLMM fitted with glmmTMB in R. DSI was expressed as a proportion and adjusted for observations at the boundary of zero so that all values fell within the interval (0, 1). The model assumed a beta-distributed response with a logit link and included disease-development Stage, Season, and Province as fixed effects. 
-
-
-#### Model fitting
-
-```{r  mixed model}
-
- is.factor(dat$Stage);is.factor(dat$Season)
-
-# check the data 
-
-head(dat)
-hist(dat$Overall)
-
-str(dat)
-table(dat$Stage)
-table(dat$Season)
-table(dat$Province)
-
-with(dat, table(Stage, Season))
-with(dat, table(Stage, Province))
-
-############################################################################
-# Fit model with Season and Province as fixed effects
-############################################################################
-
-model <- lm(
-  Overall ~ Stage + Season + Province, data = dat)
-
-summary(model)
-anova(model) # test the fixed effect of Stage
-plot(model); qqnorm(residuals(model)); qqline(residuals(model)) # check model assumptions
-
-# model resids don't look good
-
-############################################################################
-# Fit and compare models with a beta distribution
-############################################################################
-
-# create new dataframe with updated variables
-
-n_obs <- nrow(dat) # determine number of observations in data to scale DSI prop
-
-model.dat <- dat %>%
-  mutate(
-    DSI_prop = Overall / 100, # convert DSI back to proportion
-    DSI_beta = (DSI_prop * (n_obs - 1) + 0.5) / n_obs, # apply the Smithson–Verkuilen adjustment
-    Stage = factor(Stage),
-    Season = factor(Season),
-    Province = factor(Province)
-  )
-
-range(model.dat$Overall, na.rm = TRUE)
-range(model.dat$DSI_prop, na.rm = TRUE)
-range(model.dat$DSI_beta, na.rm = TRUE)
-
-# plot distributions of DSI_prop per stage and season
-ggplot(model.dat, aes(x = DSI_prop)) +
-  geom_histogram(bins = 20) +
-  facet_wrap(~ Stage) +
-  theme_bw() +
-  labs(
-    x = "Disease Severity Index",
-    y = "Number of observations",
-    title = "Distribution of DSI by Stage"
-  )
-
-#########################################
-##Fit beta dist'n models
-##########################################
-models <- list(
-
- # Stage without Season
-  Stage_only =
-    glmmTMB(
-      DSI_beta ~ Stage,
-      family = beta_family(link = "logit"),
-      data = model.dat
-    ),
-  
-  # Season without Stage
-  Season_only =
-    glmmTMB(
-      DSI_beta ~ Season,
-      family = beta_family(link = "logit"),
-      data = model.dat
-    ),
-  
-  # Province only
-  Province_only =
-    glmmTMB(
-      DSI_beta ~ Province ,
-      family = beta_family(link = "logit"),
-      data = model.dat
-    ),
-  
-   # Stage and Season
-  Stage_Season =
-    glmmTMB(
-      DSI_beta ~ Stage + Season ,
-      family = beta_family(link = "logit"),
-      data = model.dat
-    ),
- # Stage , Season and Prov
-  Stage_Season_Prov =
-    model_beta <- glmmTMB(
-  DSI_beta ~ Stage + Season + Province,
-  family = beta_family(link = "logit"),
-  data = model.dat
-),
-  
-  # Does the Stage response differ between seasons and by Province?
-  Stage_Season_Interaction =
-    glmmTMB(
-      DSI_beta ~ Stage * Season + Province ,
-      family = beta_family(link = "logit"),
-      data = model.dat
-    )
-)
-
-# index individual model outputs like:
-models[1]
-
-```
-
-#### Model comparison
-
-Observations:
-
-- 
-
-Below is the model selection table for candidate models
-
-```{r mod comparison}
-
-################################################
-#Model Comparisons
-################################################
-model_selection <- purrr::map_dfr(
-  models,
-  ~ tibble(
-    logLik = as.numeric(logLik(.x)),
-    AIC = AIC(.x),
-    BIC = BIC(.x),
-    npar = attr(logLik(.x), "df")
-  ),
-  .id = "Model"
-) %>%
-  arrange(AIC) %>%
-  mutate(
-    Delta_AIC = AIC - min(AIC),
-    AIC_weight =
-      exp(-0.5 * Delta_AIC) /
-      sum(exp(-0.5 * Delta_AIC))
-  )
-
-model_selection %>%
-  kable(
-    caption = "Model selection results for beta mixed-effects models of disease severity index.",
-    col.names = c(
-      "Model",
-      "Log-likelihood",
-      "AIC",
-      "BIC",
-      "Parameters",
-      "ΔAIC",
-      "AIC weight"
-    )
-  ) 
-
-
-
-```
-
-#### Model diagnostics
-
-Based on the AIC and anova comparison the Stage_Season_Interaction model seems to rank as the top model for information content, however, the diagnostic tests below suggest variance among seasons is not constant and some of the contrasts cannot be estimated because a stage may be missing from a season or province. 
-
-The Stage_Season model has arguably as much information content as does the interaction model (and it is within 2 AIC) with 5 less parameters. 
-
-
-```{r model diagnostics}
-
-################################################
-# Examine top model diagnostics and predictions
-################################################
-
-# First select a model to evaluate
-
-model_sel<-models[["Stage_Season_Interaction"]]
-
-# model coeffs are on logit scale
-summary(model_sel)
-
-# check convergence
-performance::check_convergence(model_sel)
-
-# check singularity
-performance::check_singularity(model_sel)
-
-# check zero-inflation
-
-sum(model.dat$Overall == 0, na.rm = TRUE)
-
-mean(model.dat$Overall == 0, na.rm = TRUE)
-
-#residual diagnostics (DHarma)
-
-simulationOutput <- simulateResiduals(
-  fittedModel = model_sel,
-  n = 1000
-)
-
-plot(simulationOutput) #approximately uniform and randomly distributed?
-
-testUniformity(simulationOutput)
-testDispersion(simulationOutput)
-testZeroInflation(simulationOutput)
-
-
-testCategorical(
-  simulationOutput,
-  catPred = model.dat$Stage
-)
-
-testCategorical(
-  simulationOutput,
-  catPred = model.dat$Season
-)
-
-testCategorical(
-  simulationOutput,
-  catPred = model.dat$Province
-)
-
-
-# Check the beta-model dispersion parameter
-
-sigma(model_sel) #Higher sigma corresponds to a more concentrated beta distribution around the predicted mean
-
-# examine random effects (if any)
-
-ranef(model_sel) 
-
-VarCorr(model_sel) #If the variance of Season:Province is essentially zero, there may be little detectable variation among provinces within seasons.Value is the standard deviation of the random intercept on the logit scale
-
-
-```
-#### Estimated marginal means
-
-```{r marginal means}
-
-
-# note that when df= Inf means that the inference is based on a normal (Wald) approximation, rather than a t distribution with estimated finite degrees of freedom. emmeans() commonly uses asymptotic inference rather than a finite-sample degrees-of-freedom approximation
-
-#############################
-# Does DSI vary by Stage?
-#############################
-# Within 2024/2025, which Stages differ in DSI?
-# Within 2025/2026, which Stages differ in DSI?
-
-# when interaction, estimate Stage means separately within each Season
-# emms represent the model-adjusted DSI while accounting for differences among Provinces
-
-# EMM of Stage (on proportion scale) averaged over the levels of Season
-emm_stage_season <- emmeans( 
-  model_sel,
-  ~ Stage |Season,
-  type = "response"
-)
-
-emm_stage_season # get back transformed estimates with CIs
-
-# Plot the estimated marginal means per stage 
-
-plot(emm_stage_season, xlab = "DSI") 
-
-# Conduct contrasts among stages
-# on the logit scale
-
-pairs(
-  emm_stage_season,
-  adjust = "tukey"
-)
-
-#########################################
-# Does DSI vary between seasons?
-#########################################
-# Compare Seasons within each Stage
-
-emm_season_stage <- emmeans(
-  model_sel,
-  ~ Season | Stage,
-  type = "response"
-)
-
-emm_season_stage
-
-# plot Estimated Disease Severity by Stage and Season
-plot(emm_season_stage, xlab ="DSI")
-
-################################################
-# how does DSI vary by stage between seasons?
-#################################################
-
-emm_season_By_stage <- emmeans(
-  model_sel,
-  ~Stage * Season,
-  type = "response"
-)
-
-plot(emm_season_By_stage)
-
-emmip(
-  model_sel,
-  Stage ~ Season,
-  type = "response",
-  CIs = TRUE
-)
-
-#########################################
-# Does DSI vary between Provinces?
-#########################################
-
-emm_prov_stage <- emmeans(
-  model_sel,
-  ~ Province,
-  type = "response"
-)
-
-plot(emm_prov_stage)
-
-```
-
-#### Random Effects (if used)
-
-```{r random effects, eval=FALSE, include=FALSE}
-
-
-# Evaluate the random effects
-
-VarCorr(model_sel) # on logit scale
-
-
-province_re <- ranef(
-  model_sel,
-  condVar = TRUE
-)
-
-province_re # BLUPs/conditional modes of the random effects.
-
-confint(model_sel,  parm = "theta_") #confidence intervals for the variance parameters
-
-# caterpillar plot
-province_re <- ranef(model_sel)$cond$`Season:Province` %>%
-  rownames_to_column("Season_Province") %>%
-  rename(
-    Random_effect = `(Intercept)`
-  ) %>%
-  arrange(Random_effect) %>%
-  mutate(
-    Season_Province = factor(
-      Season_Province,
-      levels = Season_Province
-    )
-  )
-
-ggplot(
-  province_re,
-  aes(
-    x = Random_effect,
-    y = Season_Province
-  )
-) +
-  geom_point(size = 3) +
-  theme_bw() +
-  labs(
-    x = "Province-within-Season random effect (logit scale)",
-    y = "Season:Province",
-    title = "Variation in DSI among Provinces within Seasons"
-  )
-
-# What is the estimated DSI for this particular Province, conditional on its observed data?
-
-newdat <- model.dat %>%
-  distinct(Season, Province) %>%
-  mutate(
-    Stage = levels(model.dat$Stage)[1]
-  )
-
-newdat$predicted_DSI <- predict(
-  model_beta,
-  newdata = newdat,
-  type = "response",
-  re.form = NULL
-)
-
-newdat <- newdat %>%
-  mutate(
-    predicted_DSI = predicted_DSI * 100
-  )
-
-predict(
-  model_sel,
-  newdata = newdat,
-  type = "response",
-  re.form = NULL
-)
-
-ggplot(
-  newdat,
-  aes(
-    x = Province,
-    y = predicted_DSI
-  )
-) +
-  geom_point(size = 3) +
-  facet_wrap(~ Season) +
-  theme_bw() +
-  labs(
-    x = "Province",
-    y = "Predicted DSI (%)",
-    title = "Province-specific predicted disease severity"
-  )
-
-
-```
