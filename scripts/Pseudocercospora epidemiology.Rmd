@@ -63,6 +63,7 @@ styled_kable <- function(x, caption = NULL, digits = 2) {
 - Methods say that you have hourly weather data or every 3 hours. It would be helpful to have the raw data since weekly is quite coarse. This would permit calculating GGD and other metrics that might help with the prediction accuracy
 
 
+
 ## Overview
 
 **Questions:**
@@ -501,6 +502,7 @@ ggplot(df_clean, aes(x = Start_date)) +
   ) +
   theme_minimal() +
   facet_wrap(~Province*Season, scales = "free_x")
+
 
 
 
@@ -1224,9 +1226,4 @@ score_predictions <- function(observed, predicted) {
   )
 }
 
-
-
-
 ```
-
-
