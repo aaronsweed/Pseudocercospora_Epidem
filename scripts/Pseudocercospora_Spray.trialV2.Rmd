@@ -376,8 +376,6 @@ Season_rando_Period =
       family = beta_family(link = "logit"),
       data = model.dat
     )
- 
-
 )
 
 
@@ -388,11 +386,7 @@ Season_rando_Period =
 
 Below is the model selection table for candidate models
 
-<<<<<<< HEAD
 ```{r mod comparison, fig.height= 12, fig.width= 6}
-=======
-```{r mod comparison, fig.height= 12, fig. width= 6}
->>>>>>> 2cf2dccd0c952d6173e79938a2ee63bf1f759f6c
 
 ################################################
 #Model Comparisons
@@ -879,7 +873,7 @@ ggplot(
 ## Exploratory Plots
 
 
-```{r graphs}
+```{r graphs_2}
 
 
 ####################################
@@ -887,11 +881,7 @@ ggplot(
 ####################################
 
 dat_long<- pivot_longer(dat, cols = c(Tip, Middle, Cordon, Overall), names_to = "Plant_part", values_to = "DSI") |> 
-<<<<<<< HEAD
    dplyr::mutate(
-=======
-   mutate(
->>>>>>> 2cf2dccd0c952d6173e79938a2ee63bf1f759f6c
     DSI_prop = DSI / 100, # convert DSI back to proportion
     DSI_beta = (DSI_prop * (n_obs - 1) + 0.5) / n_obs, # apply the Smithson–Verkuilen adjustment
     Stage = factor(Stage),
