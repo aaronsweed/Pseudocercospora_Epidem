@@ -1,0 +1,158 @@
+---
+title: "Pseudocercospora weather station data"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: cerulean        # Choose a modern Bootstrap theme
+    highlight: tango       # Style your code syntax highlighting
+    toc: true              # Add a Table of Contents
+    toc_float: true        # Make the Table of Contents float as you scroll
+    number_sections: true  # Add numbered headings automatically
+    code_folding: hide     # Allow readers to show/hide R code blocks
+    df_print: paged        # Render data frames as beautiful interactive tables
+---
+
+<style>
+body { max-width: 1100px; margin: 2em auto; line-height: 1.45; }
+img { max-width: 100%; height: auto; }
+table { border-collapse: collapse; }
+td, th { padding: .4em .7em; }
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", out.width = "100%")
+library(readr)
+library(knitr)
+
+season_summary <- read_csv("../analysis/season_summary.csv", show_col_types = FALSE)
+data_quality <- read_csv("../analysis/data_quality.csv", show_col_types = FALSE)
+monthly_summary <- read_csv("../analysis/monthly_summary.csv", show_col_types = FALSE)
+weekly_weather_summary <- read_csv("../analysis/weekly_weather_summary.csv", show_col_types = FALSE)
+weekly_haka_rainfall <- read_csv("../analysis/weekly_haka_rainfall.csv", show_col_types = FALSE)
+agdd_summary <- read_csv("../analysis/agdd_summary.csv", show_col_types = FALSE)
+```
+
+# Overview
+
+This report compares hourly temperature and humidity records from Haka and Mahela, alongside rainfall records from the Haka event logs and the filtered Mahela farm table. Logger intervals and rainfall source aggregation differ, so interpret site and season comparisons in the context of each source's coverage.
+
+This script imports data tables and summaries created by analyze_weather.R which imports, checks, and cleans and summarizes the weather data.
+
+
+# Seasonal summary
+
+```{r seasonal-summary}
+kable(season_summary, digits = 2, caption = "Logger observations by site and file season")
+```
+
+**Tables:** [data quality audit](data_quality.csv) · [monthly summary](monthly_summary.csv) · [weekly weather summary](weekly_weather_summary.csv) · [weekly Haka rainfall](weekly_haka_rainfall.csv) · [normalized hourly observations](hourly_weather_clean.csv)
+
+
+# Data quality
+
+The importer excludes temperature values outside −10°C to 50°C and records where both temperature and relative humidity equal 0, which are treated as sensor failures. This removes implausible logger codes, including repeated −40°C and 80°C values in Mahela 2024–25. The audit below reports temperature-range exclusions, zero/zero sensor exclusions, and the combined count for each source.
+
+```{r data-quality}
+kable(data_quality, caption = "Temperature records checked against the plausibility range")
+```
+
+# Temperature
+
+## Monthly
+The shaded bands show monthly minimum-to-maximum ranges; lines show monthly mean temperature.
+
+```{r temperature-by-season, out.height="auto"}
+knitr::include_graphics("../analysis/temperature_by_season.png")
+
+```
+
+## Accumulated growing degree days (AGDD)
+
+The AGDD season starts on 1 September, a practical start date consistent with South African kiwifruit budbreak reported in early to mid-September; actual timing varies by cultivar and orchard ([TopFruit cultivar information](https://www.topfruit.co.za/fruit/ya-50/)). Daily minimum and maximum temperatures are calculated from available logger readings at each site. Daily GDD is `max(0, ((Tmax + Tmin) / 2) - 4°C)`, with no upper temperature cap, and AGDD is the cumulative sum of observed daily GDD. Days without logger observations are omitted from the accumulation and appear as gaps in the curves.
+
+```{r agdd-summary}
+kable(agdd_summary, digits = 1, caption = "AGDD and daily weather coverage by site and growing season")
+```
+
+```{r agdd-plot, out.height="auto"}
+knitr::include_graphics("../analysis/agdd_by_site_season.png")
+```
+
+## Weekly
+
+Weekly plots show means with min-to-max ranges for temperature and humidity. Haka rainfall is plotted as weekly event totals.
+
+```{r weekly-temperature-plot, out.height="auto"}
+knitr::include_graphics("../analysis/weekly_temperature.png")
+```
+
+
+## Daily
+
+Daily temperature profiles use each observation's recorded local clock hour.
+
+```{r diurnal-temperature, out.height="auto"}
+knitr::include_graphics("../analysis/diurnal_temperature.png")
+```
+
+
+# Humidity
+
+## Monthly
+
+```{r humidity-by-season, out.height="auto"}
+knitr::include_graphics("../analysis/humidity_by_season.png")
+```
+
+## Weekly 
+
+
+Weekly plots show means with min-to-max ranges for temperature and humidity. Haka rainfall is plotted as weekly event totals.
+
+```{r weekly-humidity-plot, out.height="auto"}
+knitr::include_graphics("../analysis/weekly_humidity.png")
+```
+
+
+# Rainfall
+
+Haka rainfall is recorded by event; Mahela rainfall comes from monthly farm totals. Monthly panels are separated by site and use zero-based independent y-scales, with colors grouping seasons. The weekly Haka plot uses event totals; Mahela is not shown weekly because its data are monthly.
+
+## Monthly
+
+
+```{r monthly-rainfall, out.height="auto"}
+knitr::include_graphics("../analysis/monthly_rainfall.png")
+```
+
+**Rainfall tables:** [monthly totals](monthly_rainfall.csv) · [Haka rain events](haka_rain_events_clean.csv) · [Mahela monthly records](mahela_monthly_rain_clean.csv)
+
+## Weekly 
+
+Weekly plots show means with min-to-max ranges for temperature and humidity. Haka rainfall is plotted as weekly event totals.
+
+```{r weekly-rainfall-plot, out.height="auto"}
+knitr::include_graphics("../analysis/weekly_rainfall.png")
+```
+
+
+
+# Method and coverage
+
+Five logger seasons were imported from CSV and Excel files, with Excel serial dates and the 2023–24 Mahela decimal-comma format handled during import. Monthly summaries report means and observed ranges. Seasonal means are descriptive and do not adjust for differences in coverage or sampling intervals.
+
+The Haka workbook named for 2025–26 spans September 2024 through May 2026. The date range in [season_summary.csv](season_summary.csv) shows this coverage directly.
+
+# Weekly summaries
+
+Weeks begin on Monday. Temperature and relative humidity are summarized by site, season, and week using the available logger readings. The table includes the observation count, weekly mean, minimum, and maximum for each variable. Haka rainfall is summarized by week from event records. Mahela rainfall is only available as monthly totals, so it is not allocated to weeks.
+
+```{r weekly-weather}
+kable(weekly_weather_summary, digits = 2, caption = "Weekly temperature and relative humidity summaries") |> kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed"), fixed_thead = T)
+```
+
+
+
+
+
