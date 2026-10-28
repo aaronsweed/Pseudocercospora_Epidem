@@ -533,7 +533,7 @@ make_lags <- function(dat, max_lag = 6) {
     ungroup()
 
   # Break lag calculations across gaps in weekly sampling
-  for (v in c("Tave", "Rhm", "Rain")) {
+  for (v in c("Tave", "Rhm", "Rain", "Tmin", "Tmax")) {
 
     for (L in seq_len(max_lag)) {
 
@@ -642,15 +642,16 @@ weather_long <- dat_lag_2 |>
   pivot_longer( 
     cols = c(Tmin, Tmax, Tave, Rain, Rhm, contains("lag")),
     names_to = "WeatherVariable",
-    values_to = "weather_value"
-  )
+    values_to = "WeatherValue"
+  ) |> 
+  mutate(logSpores = log1p(nSpores))
 
 # Create separate plots
 weather_plots <- weather_long %>%
   split(.$WeatherVariable) %>%
   lapply(function(dat) {
     
-    ggplot(dat, aes(x = WeatherValue, y = nSpores)) +
+    ggplot(dat, aes(x = WeatherValue, y = logSpores)) +
       geom_point(alpha = 0.5) +
       geom_smooth(
         method = "lm",
@@ -672,11 +673,11 @@ weather_plots <- weather_long %>%
   })
 
 # View the individual plots
-weather_plots$Tmax
-weather_plots$Tmin
-weather_plots$Tave
-weather_plots$Rhm
-weather_plots$Rain
+for (nm in names(weather_plots)) {
+  cat("### ", nm, "\n\n", sep = "")
+  print(weather_plots[[nm]])
+  cat("\n\n")
+}
 
 ```
 
@@ -710,7 +711,15 @@ ggplot(dat, aes(Start_date, nSpores, color= Trap, group= Season)) +
 
 ```{r lm}
 
+lm0<-lm(log1p(nSpores)~ Tave * Rhm, data= dat_lag_2)
 
+summary(lm0)
+  
+lm1<- lm(log1p(nSpores)~ Tave+ Rhm_lag1, data= dat_lag_2)
+summary(lm1)
+
+
+lm_all<-lm(log1p(nSpores)~ Tave+ Rhm_lag2)
 
 ```
 
