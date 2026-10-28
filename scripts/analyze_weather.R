@@ -173,7 +173,7 @@ mahela_rain <- read_excel(file.path(data_dir,'Mahela Rainfall_Tableau (Live).xls
   transmute(site='Mahela',season=if_else(Season==2024,'2024-25',as.character(Season)),datetime,rain_mm=as.numeric(Rainfall)) |> filter(!is.na(datetime))
 write_csv(rain_haka,file.path(out_dir,'haka_rain_events_clean.csv'))
 weekly_haka_rain <- rain_haka |>
-  mutate(week_start=floor_date(datetime,'week',week_start=1)) |>
+  mutate(week_start=floor_date(datetime,'week',week_start=7)) |> # week starts on Sunday
   group_by(site,season,week_start) |>
   summarise(rain_mm=sum(rain_mm,na.rm=TRUE), rain_events=n(), .groups='drop')
 write_csv(weekly_haka_rain,file.path(out_dir,'weekly_haka_rainfall.csv'))
@@ -197,8 +197,6 @@ p7 <- ggplot(weekly_haka_rain,aes(week_start,rain_mm,fill=season)) +
   theme_minimal(base_size=11) + theme(axis.text.x=element_text(angle=45,hjust=1),legend.position='top')
 ggsave(file.path(out_dir,'weekly_rainfall.png'),p7,width=11,height=7,dpi=180)
 
-rmarkdown::find_pandoc(dir='C:/Program Files/Quarto/bin/tools')
-rmarkdown::render(file.path(out_dir,'index.Rmd'), output_file='index.html', output_dir=out_dir, quiet=TRUE, envir=new.env(parent=globalenv()))
 cat('Parsed weather rows:',nrow(weather),' | Haka rain events:',nrow(rain_haka),' | Mahela monthly rain rows:',nrow(mahela_rain),'\n')
 print(summ)
 

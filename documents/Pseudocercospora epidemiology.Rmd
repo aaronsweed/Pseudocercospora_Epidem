@@ -60,8 +60,7 @@ styled_kable <- function(x, caption = NULL, digits = 2) {
 
 ## Meeting Notes
 
-- Methods say that you have hourly weather data or every 3 hours. It would be helpful to have the raw data since weekly is quite coarse. This would permit calculating GGD and other metrics that might help with the prediction accuracy
-
+- 
 
 
 ## Overview
@@ -71,7 +70,7 @@ styled_kable <- function(x, caption = NULL, digits = 2) {
 1. When are spores spread in the orchard?
 
 - Does spore release correlate with certain climatic conditions (temperature, relative humidity, rain)?
-- Are spores more prevalent during certain stages of kiwifruit development
+- Are spores more prevalent during certain stages of kiwifruit development (Phenology)
 - Is there a dominant direction that the spores are coming from?
 
 2. When should chemicals be applied during the season?
@@ -93,7 +92,7 @@ styled_kable <- function(x, caption = NULL, digits = 2) {
 
 ```{r import}
 
-Sporecounts_Master <- readxl::read_excel("data/Sporecounts_Master.xlsx", 
+Sporecounts_Master <- readxl::read_excel("../data/Sporecounts_Master.xlsx", 
     col_types = c("numeric", "numeric", "numeric", 
         "numeric", "numeric", "numeric", 
         "numeric", "numeric", "text", "text", 
@@ -272,69 +271,30 @@ ggplot(df_long, aes(x = Value, fill = Season)) +
     title = "Histograms of measured variables by Orchard and Season"
   )
 
-# Scatter plots
+```
 
-# Scatter Plot matrix of measured variables
+### Prep and Check Spore Data
 
-Sporecounts_Master %>%
-  select(all_of(numeric_vars), Orchard, Season) %>%
-  ggpairs(title ="Scatter Plot matrix of measured variables",
-    columns = numeric_vars,
-    aes(color = Orchard, alpha = 0.5),
-    upper = list(
-      continuous = wrap("cor", method = "spearman", size = 3.5)
-    ),
-    lower = list(
-      continuous = wrap("points", alpha = 0.4, size = 1.2)
-    ),
-    diag = list(
-      continuous = wrap("densityDiag", alpha = 0.4)
-    )
-)
+```{r spore_pred}
 
-
-# Scatterplots for the weather variables vs Spores
-
-df_long2 <- Sporecounts_Master %>%
-  pivot_longer(
-    cols = c(Tmax, Tmin, Tave, Rhm, Rain),
-    names_to = "WeatherVariable",
-    values_to = "WeatherValue"
+# Prepare data
+dat <- df_clean %>%
+  mutate(
+    Trap = factor(Trap)
   ) %>%
-  mutate(log_nSpores = log1p(nSpores))
+  arrange(Trap, Start_date)
 
-# Create separate plots
-weather_plots <- df_long2 %>%
-  split(.$WeatherVariable) %>%
-  lapply(function(dat) {
-    
-    ggplot(dat, aes(x = WeatherValue, y = log_nSpores)) +
-      geom_point(alpha = 0.5) +
-      geom_smooth(
-        method = "lm",
-        se = FALSE
-      ) +
-      facet_grid(
-        ~ Orchard + Season,
-        scales = "free_x"
-      ) +
-      theme_classic() +
-      labs(
-        x = unique(dat$WeatherVariable),
-        y = "log(Number of spores + 1)",
-        title = paste(
-          unique(dat$WeatherVariable),
-          "vs Spores (log)"
-        )
-      )
-  })
+# Check whether observations are weekly and unique within traps
+dat %>%
+  group_by(Orchard, Season, Trap) %>%
+  summarise(
+    n = n(),
+    duplicate_dates = sum(duplicated(Start_date)),
+    median_days_between_samples =
+      median(as.numeric(diff(sort(Start_date))), na.rm = TRUE),
+    .groups = "drop"
+  )
 
-# View the individual plots
-weather_plots$Tmax
-weather_plots$Tmin
-weather_plots$Tave
-weather_plots$Rhm
-weather_plots$Rain
 ```
 
 ## Seasonal Weather
@@ -509,22 +469,46 @@ ggplot(df_clean, aes(x = Start_date)) +
 
 ```
 
+## Are spores more prevalent during certain stages of kiwifruit development (Phenology)
 
-## Statistical Modeling for Spore Counts
+```{r spore_phen}
 
--structured model-selection workflow that evaluates weather effects, biologically meaningful time lags, predictor interactions, temporal autocorrelation, and out-of-sample predictive performance.
+ggplot(dat, aes(x = nSpores)) +
+  geom_histogram(
+    bins = 20,
+    alpha = 0.5,
+    position = "identity"
+  ) +
+  facet_wrap(
+    ~Phenology,
+    scales = "fixed"
+  ) +
+  theme_classic() +
+  labs(
+    x = "Value",
+    y = "Frequency",
+    fill = "Season",
+    title = "Histograms of spore Counts by Phenology"
+  )
+
+```
 
 
 
-Temperature (Tave):	Is the relationship linear or nonlinear?
-Relative humidity (Rhm):	Does humidity affect spore counts independently of temperature?
-Rainfall (Rain):	Is there a nonlinear or threshold response?
-Phenology:	Does spore abundance differ among phenological stages?
-Time lags:	Do weather conditions 1–4 or more weeks earlier predict current counts?
-Interactions:	Does the effect of rainfall depend on temperature or humidity?
-Seasonality:	Is there a recurring annual pattern not explained by weather?
-Temporal dependence:	Are adjacent weekly counts correlated after accounting for predictors?
-Trap effects:	Do traps differ consistently in their average counts?
+## Does spore release correlate with certain climatic conditions (temperature, relative humidity, rain)?
+
+-structured model-selection workflow that evaluates weather effects, including time lags, predictor interactions, temporal autocorrelation, and out-of-sample predictive performance.
+
+
+*Temperature (Tave):	Is the relationship linear or nonlinear?
+*Relative humidity (Rhm):	Does humidity affect spore counts independently of temperature?
+*Rainfall (Rain):	Is there a nonlinear or threshold response?
+*Phenology:	Does spore abundance differ among phenological stages?
+*Time lags:	Do weather conditions 1–4 or more weeks earlier predict current counts?
+*Interactions:	Does the effect of rainfall depend on temperature or humidity?
+*Seasonality:	Is there a recurring annual pattern not explained by weather?
+*Temporal dependence:	Are adjacent weekly counts correlated after accounting for predictors?
+*Trap effects:	Do traps differ consistently in their average counts?
 
 Thoughts on time lags: 
 
@@ -532,29 +516,6 @@ If spores are released in response to weather, short lags may be appropriate.
 
 If predictors affect pathogen development, sporulation, or host susceptibility, longer lags may be more plausible.
 
-### Prep and Check Data
-
-```{r spore_pred}
-
-# Prepare data
-dat <- df_clean %>%
-  mutate(
-    Trap = factor(Trap)
-  ) %>%
-  arrange(Trap, Start_date)
-
-# Check whether observations are weekly and unique within traps
-dat %>%
-  group_by(Orchard, Season, Trap) %>%
-  summarise(
-    n = n(),
-    duplicate_dates = sum(duplicated(Start_date)),
-    median_days_between_samples =
-      median(as.numeric(diff(sort(Start_date))), na.rm = TRUE),
-    .groups = "drop"
-  )
-
-```
 
 ### Create time lags and plot weather variables
 
@@ -652,11 +613,75 @@ corrplot(
   number.cex = 0.5
 )
 
+# Scatter plots
+
+# Scatter Plot matrix of measured variables
+
+Sporecounts_Master %>%
+  select(all_of(numeric_vars), Orchard, Season) %>%
+  ggpairs(title ="Scatter Plot matrix of measured variables",
+    columns = numeric_vars,
+    aes(color = Orchard, alpha = 0.5),
+    upper = list(
+      continuous = wrap("cor", method = "spearman", size = 3.5)
+    ),
+    lower = list(
+      continuous = wrap("points", alpha = 0.4, size = 1.2)
+    ),
+    diag = list(
+      continuous = wrap("densityDiag", alpha = 0.4)
+    )
+)
+
+
+# Scatterplots for the weather variables vs Spores
+
+dat_lag_2 <- make_lags(dat, max_lag = 2)
+
+weather_long <- dat_lag_2 |>
+  pivot_longer( 
+    cols = c(Tmin, Tmax, Tave, Rain, Rhm, contains("lag")),
+    names_to = "WeatherVariable",
+    values_to = "weather_value"
+  )
+
+# Create separate plots
+weather_plots <- weather_long %>%
+  split(.$WeatherVariable) %>%
+  lapply(function(dat) {
+    
+    ggplot(dat, aes(x = WeatherValue, y = nSpores)) +
+      geom_point(alpha = 0.5) +
+      geom_smooth(
+        method = "lm",
+        se = FALSE
+      ) +
+      facet_grid(
+        ~ Orchard + Season,
+        scales = "free_x"
+      ) +
+      theme_classic() +
+      labs(
+        x = unique(dat$WeatherVariable),
+        y = "log(Number of spores + 1)",
+        title = paste(
+          unique(dat$WeatherVariable),
+          "vs Spores (log)"
+        )
+      )
+  })
+
+# View the individual plots
+weather_plots$Tmax
+weather_plots$Tmin
+weather_plots$Tave
+weather_plots$Rhm
+weather_plots$Rain
 
 ```
 
 
-### Plot spore counts
+### Plot spore counts over time
 
 ```{r spore_plots}
 
@@ -680,6 +705,15 @@ ggplot(dat, aes(Start_date, nSpores, color= Trap, group= Season)) +
 
 
 ```
+
+### Fit linear models
+
+```{r lm}
+
+
+
+```
+
 
 
 ### Fit candidate GAMS
