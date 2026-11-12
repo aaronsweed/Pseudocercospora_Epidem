@@ -25,17 +25,35 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
 library(readr)
 library(knitr)
 
-season_summary <- read_csv("../analysis/season_summary.csv", show_col_types = FALSE)
-data_quality <- read_csv("../analysis/data_quality.csv", show_col_types = FALSE)
-monthly_summary <- read_csv("../analysis/monthly_summary.csv", show_col_types = FALSE)
-weekly_weather_summary <- read_csv("../analysis/weekly_weather_summary.csv", show_col_types = FALSE)
-weekly_haka_rainfall <- read_csv("../analysis/weekly_haka_rainfall.csv", show_col_types = FALSE)
-agdd_summary <- read_csv("../analysis/agdd_summary.csv", show_col_types = FALSE)
+project_root <- if (dir.exists(file.path("data", "Cheyenne_ppt_temp_hourly"))) {
+  getwd()
+} else {
+  normalizePath("..", winslash = "/", mustWork = TRUE)
+}
+analysis_dir <- file.path(project_root, "data", "Cheyenne_ppt_temp_hourly", "analysis")
+season_summary <- read_csv(file.path(analysis_dir, "season_summary.csv"), show_col_types = FALSE)
+data_quality <- read_csv(file.path(analysis_dir, "data_quality.csv"), show_col_types = FALSE)
+monthly_summary <- read_csv(file.path(analysis_dir, "monthly_summary.csv"), show_col_types = FALSE)
+weekly_weather_summary <- read_csv(file.path(analysis_dir, "weekly_weather_summary.csv"), show_col_types = FALSE)
+weekly_rainfall <- read_csv(file.path(analysis_dir, "weekly_rainfall.csv"), show_col_types = FALSE)
+weekly_rainfall_totals <- weekly_rainfall |>
+  dplyr::group_by(site, season) |>
+  dplyr::summarise(
+    weeks_reported = dplyr::n(),
+    total_rainfall_mm = sum(rain_mm, na.rm = TRUE),
+    mean_weekly_rainfall_mm = mean(rain_mm, na.rm = TRUE),
+    .groups = "drop"
+  )
+rainfall_overlap_monthly <- read_csv(file.path(analysis_dir, "mahela_haenertsburg_monthly_overlap.csv"), show_col_types = FALSE)
+rainfall_overlap_summary <- read_csv(file.path(analysis_dir, "mahela_haenertsburg_overlap_summary.csv"), show_col_types = FALSE)
+daily_weather_overlap <- read_csv(file.path(analysis_dir, "mahela_haenertsburg_daily_weather_overlap.csv"), show_col_types = FALSE)
+daily_weather_overlap_summary <- read_csv(file.path(analysis_dir, "mahela_haenertsburg_daily_weather_summary.csv"), show_col_types = FALSE)
+agdd_summary <- read_csv(file.path(analysis_dir, "agdd_summary.csv"), show_col_types = FALSE)
 ```
 
 # Overview
 
-This report compares hourly temperature and humidity records from Haka and Mahela, alongside rainfall records from the Haka event logs and the filtered Mahela farm table. Logger intervals and rainfall source aggregation differ, so interpret site and season comparisons in the context of each source's coverage.
+This report compares hourly temperature and humidity records from Haka and Mahela, alongside daily temperature, humidity, and rainfall from the Haenertsburg station and rainfall from the Haka event logs and filtered Mahela farm table. Haenertsburg is approximately 15 km from the Limpopo orchard, so it represents nearby regional conditions rather than measurements at the orchard. Logger intervals and source aggregation differ, so interpret comparisons in the context of each source's coverage.
 
 This script imports data tables and summaries created by analyze_weather.R which imports, checks, and cleans and summarizes the weather data.
 
@@ -46,7 +64,7 @@ This script imports data tables and summaries created by analyze_weather.R which
 kable(season_summary, digits = 2, caption = "Logger observations by site and file season")
 ```
 
-**Tables:** [data quality audit](data_quality.csv) · [monthly summary](monthly_summary.csv) · [weekly weather summary](weekly_weather_summary.csv) · [weekly Haka rainfall](weekly_haka_rainfall.csv) · [normalized hourly observations](hourly_weather_clean.csv)
+**Tables:** [data quality audit](../data/Cheyenne_ppt_temp_hourly/analysis/data_quality.csv) · [monthly summary](../data/Cheyenne_ppt_temp_hourly/analysis/monthly_summary.csv) · [weekly weather summary](../data/Cheyenne_ppt_temp_hourly/analysis/weekly_weather_summary.csv) · [weekly rainfall](../data/Cheyenne_ppt_temp_hourly/analysis/weekly_rainfall.csv) · [Haenertsburg daily climate](../data/Cheyenne_ppt_temp_hourly/analysis/haenertsburg_daily_climate_clean.csv) · [normalized hourly observations](../data/Cheyenne_ppt_temp_hourly/analysis/hourly_weather_clean.csv)
 
 
 # Data quality
@@ -63,7 +81,7 @@ kable(data_quality, caption = "Temperature records checked against the plausibil
 The shaded bands show monthly minimum-to-maximum ranges; lines show monthly mean temperature.
 
 ```{r temperature-by-season, out.height="auto"}
-knitr::include_graphics("../analysis/temperature_by_season.png")
+knitr::include_graphics(file.path(analysis_dir, "temperature_by_season.png"))
 
 ```
 
@@ -76,7 +94,7 @@ kable(agdd_summary, digits = 1, caption = "AGDD and daily weather coverage by si
 ```
 
 ```{r agdd-plot, out.height="auto"}
-knitr::include_graphics("../analysis/agdd_by_site_season.png")
+knitr::include_graphics(file.path(analysis_dir, "agdd_by_site_season.png"))
 ```
 
 ## Weekly
@@ -84,7 +102,7 @@ knitr::include_graphics("../analysis/agdd_by_site_season.png")
 Weekly plots show means with min-to-max ranges for temperature and humidity. Haka rainfall is plotted as weekly event totals.
 
 ```{r weekly-temperature-plot, out.height="auto"}
-knitr::include_graphics("../analysis/weekly_temperature.png")
+knitr::include_graphics(file.path(analysis_dir, "weekly_temperature.png"))
 ```
 
 
@@ -93,7 +111,7 @@ knitr::include_graphics("../analysis/weekly_temperature.png")
 Daily temperature profiles use each observation's recorded local clock hour.
 
 ```{r diurnal-temperature, out.height="auto"}
-knitr::include_graphics("../analysis/diurnal_temperature.png")
+knitr::include_graphics(file.path(analysis_dir, "diurnal_temperature.png"))
 ```
 
 
@@ -102,7 +120,7 @@ knitr::include_graphics("../analysis/diurnal_temperature.png")
 ## Monthly
 
 ```{r humidity-by-season, out.height="auto"}
-knitr::include_graphics("../analysis/humidity_by_season.png")
+knitr::include_graphics(file.path(analysis_dir, "humidity_by_season.png"))
 ```
 
 ## Weekly 
@@ -111,42 +129,90 @@ knitr::include_graphics("../analysis/humidity_by_season.png")
 Weekly plots show means with min-to-max ranges for temperature and humidity. Haka rainfall is plotted as weekly event totals.
 
 ```{r weekly-humidity-plot, out.height="auto"}
-knitr::include_graphics("../analysis/weekly_humidity.png")
+knitr::include_graphics(file.path(analysis_dir, "weekly_humidity.png"))
 ```
+
+
+# Mahela–Haenertsburg comparison
+
+## Daily temperature and humidity overlap
+
+Mahela's cleaned hourly logger records are averaged by calendar date and matched to Haenertsburg's daily mean temperature and relative humidity. Dates are retained when both variables have at least 75% of the modal daily record count for that Mahela season. This accommodates the hourly and three-hourly logger schedules (typically at least 18 of 24 or 6 of 8 readings) while excluding very incomplete days. The time-series plot is faceted by Mahela season, with each x-axis limited to that season's paired measurement period so long spans without measurements do not obscure the station comparison. Bias is calculated as Haenertsburg minus Mahela. Since the station is approximately 15 km from the orchard, differences also reflect local spatial variation.
+
+```{r daily-weather-overlap-summary}
+kable(daily_weather_overlap_summary, digits = 2,
+      caption = "Paired daily temperature and relative humidity by calendar year and overall")
+```
+
+```{r daily-weather-overlap-timeseries, out.height="auto"}
+knitr::include_graphics(file.path(analysis_dir, "mahela_haenertsburg_daily_weather_timeseries.png"))
+```
+
+```{r daily-weather-overlap-scatter, out.height="auto"}
+knitr::include_graphics(file.path(analysis_dir, "mahela_haenertsburg_daily_weather_scatter.png"))
+```
+
+**Paired daily data:** [download matched daily observations and logger coverage](../data/Cheyenne_ppt_temp_hourly/analysis/mahela_haenertsburg_daily_weather_overlap.csv) · [download cleaned Haenertsburg daily climate](../data/Cheyenne_ppt_temp_hourly/analysis/haenertsburg_daily_climate_clean.csv) · [download comparison summary](../data/Cheyenne_ppt_temp_hourly/analysis/mahela_haenertsburg_daily_weather_summary.csv)
+
+## Rainfall
+
+The Mahela source provides rainfall records with month but no usable daily date, so its records are summed by calendar month. Haenertsburg daily rainfall is also summed by calendar month; only months with complete daily station coverage are included. The comparison is matched by calendar month, and the difference is calculated as Haenertsburg minus Mahela. Because the station is about 15 km from the orchard, the comparison describes regional agreement rather than duplicate measurements at the same location.
+
+```{r rainfall-overlap-summary}
+kable(rainfall_overlap_summary, digits = 2,
+      caption = "Paired monthly rainfall comparison by calendar year and overall")
+```
+
+```{r rainfall-overlap-monthly-plot, out.height="auto"}
+knitr::include_graphics(file.path(analysis_dir, "mahela_haenertsburg_monthly_overlap.png"))
+```
+
+```{r rainfall-overlap-scatter, out.height="auto"}
+knitr::include_graphics(file.path(analysis_dir, "mahela_haenertsburg_rainfall_scatter.png"))
+```
+
+**Paired monthly data:** [download the matched months](../data/Cheyenne_ppt_temp_hourly/analysis/mahela_haenertsburg_monthly_overlap.csv) · [download comparison summaries](../data/Cheyenne_ppt_temp_hourly/analysis/mahela_haenertsburg_overlap_summary.csv)
+
 
 
 # Rainfall
 
-Haka rainfall is recorded by event; Mahela rainfall comes from monthly farm totals. Monthly panels are separated by site and use zero-based independent y-scales, with colors grouping seasons. The weekly Haka plot uses event totals; Mahela is not shown weekly because its data are monthly.
+Haka rainfall is recorded by event; Mahela rainfall comes from monthly farm totals; Haenertsburg provides daily rainfall from a station approximately 15 km from the Mahela orchard in Limpopo. In both rainfall plots, bars show period totals on the left axis and lines show cumulative totals for each site and season on the right axis; cumulative totals reset at the start of each season. Monthly panels use independent zero-based scales by site. Weekly totals are shown for Haka and Haenertsburg; Mahela is not shown weekly because its data are monthly.
+
 
 ## Monthly
 
 
 ```{r monthly-rainfall, out.height="auto"}
-knitr::include_graphics("../analysis/monthly_rainfall.png")
+knitr::include_graphics(file.path(analysis_dir, "monthly_rainfall.png"))
 ```
 
-**Rainfall tables:** [monthly totals](monthly_rainfall.csv) · [Haka rain events](haka_rain_events_clean.csv) · [Mahela monthly records](mahela_monthly_rain_clean.csv)
+**Rainfall tables:** [monthly totals](../data/Cheyenne_ppt_temp_hourly/analysis/monthly_rainfall.csv) · [weekly totals](../data/Cheyenne_ppt_temp_hourly/analysis/weekly_rainfall.csv) · [Haka rain events](../data/Cheyenne_ppt_temp_hourly/analysis/haka_rain_events_clean.csv) · [Mahela monthly records](../data/Cheyenne_ppt_temp_hourly/analysis/mahela_monthly_rain_clean.csv) · [Haenertsburg daily records](../data/Cheyenne_ppt_temp_hourly/analysis/haenertsburg_daily_rainfall_clean.csv)
+
+```{r weekly-rainfall-summary}
+kable(weekly_rainfall_totals, digits = 1,
+      caption = "Weekly rainfall coverage and totals by site and season")
+```
 
 ## Weekly 
 
-Weekly plots show means with min-to-max ranges for temperature and humidity. Haka rainfall is plotted as weekly event totals.
+Weekly bars combine Haka event records with sums of Haenertsburg daily rainfall. Their lines show within-season cumulative rainfall. The Haenertsburg station's distance from the orchard is shown in the panel label and reflects regional, not orchard-level, rainfall.
 
 ```{r weekly-rainfall-plot, out.height="auto"}
-knitr::include_graphics("../analysis/weekly_rainfall.png")
+knitr::include_graphics(file.path(analysis_dir, "weekly_rainfall.png"))
 ```
 
 
 
 # Method and coverage
 
-Five logger seasons were imported from CSV and Excel files, with Excel serial dates and the 2023–24 Mahela decimal-comma format handled during import. Monthly summaries report means and observed ranges. Seasonal means are descriptive and do not adjust for differences in coverage or sampling intervals.
+Five logger seasons were imported from CSV and Excel files, with Excel serial dates and the 2023–24 Mahela decimal-comma format handled during import. Haenertsburg daily climate data cover 1 January 2023 through 31 December 2024 and are assigned to October–September seasons for seasonal grouping. The daily comparison uses matched dates and season-specific logger coverage thresholds. Monthly summaries report means and observed ranges. Seasonal means are descriptive and do not adjust for differences in coverage or sampling intervals.
 
-The Haka workbook named for 2025–26 spans September 2024 through May 2026. The date range in [season_summary.csv](season_summary.csv) shows this coverage directly.
+The Haka workbook named for 2025–26 spans September 2024 through May 2026. The date range in [season_summary.csv](../data/Cheyenne_ppt_temp_hourly/analysis/season_summary.csv) shows this coverage directly.
 
 # Weekly summaries
 
-Weeks begin on Sunday. Temperature and relative humidity are summarized by site, season, and week using the available logger readings. The table includes the observation count, weekly mean, minimum, and maximum for each variable. Haka rainfall is summarized by week from event records. Mahela rainfall is only available as monthly totals, so it is not allocated to weeks.
+Weeks begin on Sunday. Temperature and relative humidity are summarized by site, season, and week using the available logger readings. The table includes the observation count, weekly mean, minimum, and maximum for each variable. Haka rainfall is summarized by week from event records; Haenertsburg rainfall is summed from daily records. Mahela rainfall is only available as monthly totals, so it is not allocated to weeks.
 
 ```{r weekly-weather}
 kable(weekly_weather_summary, digits = 2, caption = "Weekly temperature and relative humidity summaries") |> kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed"), fixed_thead = T)

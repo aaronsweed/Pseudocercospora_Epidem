@@ -10,8 +10,8 @@ D <- function(x, y) {
 # y= total weekly rainfall
 
 # Define the ranges of x and y
-x <- seq(0, 28, length.out = 200)
-y <- seq(0, 100, length.out = 200)
+x <- seq(0, 28, length.out = 200) # avg weekly temp
+y <- seq(0, 100, length.out = 200) ## ppt
 
 # Create grid of x and y combinations
 df <- expand.grid(

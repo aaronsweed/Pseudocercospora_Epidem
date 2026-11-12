@@ -1,4 +1,4 @@
-# Analyze hourly Haka and Mahela temperature/humidity files and rainfall records; normalize the different CSV/Excel formats, flag and exclude implausible temperature readings, then write cleaned datasets, seasonal/monthly summaries, plots, and an HTML report to the analysis folder.
+# Analyze hourly Haka and Mahela temperature/humidity files, their rainfall records, and daily Haenertsburg rainfall; normalize the different CSV/Excel formats, flag and exclude implausible temperature readings, then write cleaned datasets, summaries, plots, and an HTML report to the analysis folder.
 suppressPackageStartupMessages({library(readr); library(dplyr); library(ggplot2); library(readxl); library(lubridate); library(stringr)})
 data_dir <- normalizePath('./data/Cheyenne_ppt_temp_hourly', winslash='/', mustWork=TRUE)
 out_dir <- file.path(data_dir, './analysis')
@@ -162,6 +162,7 @@ p3 <- weather |> filter(!is.na(humidity_pct)) |> group_by(site,season,month) |> 
 ggsave(file.path(out_dir,'humidity_by_season.png'),p3,width=10,height=7,dpi=180)
 
 # Rainfall: Haka event logs are mm/event; Mahela workbook's filtered sheet provides monthly farm totals.
+
 rain_files <- c('Haka_KZNrain_2024.2025.csv','Haka_KZNrain_2025.2026.csv')
 rain_haka <- bind_rows(lapply(rain_files,function(f){
   x <- read_delim(file.path(data_dir,f),delim=';',skip=0,show_col_types=FALSE,trim_ws=TRUE,na=c('','','NA'))
@@ -171,6 +172,208 @@ rain_haka <- bind_rows(lapply(rain_files,function(f){
 mahela_rain <- read_excel(file.path(data_dir,'Mahela Rainfall_Tableau (Live).xls'),sheet='Mahela filtered') |> 
   filter(Farm=='Sandford_Mahela') |> mutate(month_num=match(Month,month.name), datetime=as.POSIXct(make_date(as.integer(Season),month_num,1))) |> 
   transmute(site='Mahela',season=if_else(Season==2024,'2024-25',as.character(Season)),datetime,rain_mm=as.numeric(Rainfall)) |> filter(!is.na(datetime))
+
+# Haenertsburg daily climate workbook: rows 1-2 contain location metadata, row 4 has headers.
+# It provides daily mean/max/min temperature, daily rainfall, and mean/max relative humidity.
+
+haenertsburg_raw <- read_excel(
+  file.path(data_dir,'Haenertsburg climate 2023.2024.xlsx'),
+  skip=4, col_names=FALSE, .name_repair='minimal'
+)
+if (ncol(haenertsburg_raw) < 9) stop('Expected climate fields through relative humidity in column 9 of Haenertsburg workbook')
+names(haenertsburg_raw) <- paste0('column_', seq_along(haenertsburg_raw))
+haenertsburg_daily <- haenertsburg_raw |>
+  transmute(
+    date=as.Date(column_1),
+    temp_mean_c=suppressWarnings(as.numeric(column_2)),
+    temp_max_c=suppressWarnings(as.numeric(column_3)),
+    temp_min_c=suppressWarnings(as.numeric(column_4)),
+    rain_mm=suppressWarnings(as.numeric(column_6)),
+    humidity_mean_pct=suppressWarnings(as.numeric(column_8)),
+    humidity_max_pct=suppressWarnings(as.numeric(column_9))
+  ) |>
+  filter(!is.na(date)) |>
+  mutate(
+    site='Haenertsburg (~15 km from Mahela)',
+    season_start_year=if_else(month(date) >= 10L, year(date), year(date)-1L),
+    season=sprintf('%d-%02d', season_start_year, (season_start_year+1L) %% 100L),
+    datetime=as.POSIXct(date, tz='Africa/Johannesburg')
+  ) |>
+  select(site,season,date,datetime,temp_mean_c,temp_max_c,temp_min_c,
+         humidity_mean_pct,humidity_max_pct,rain_mm) |>
+  arrange(date)
+if (!nrow(haenertsburg_daily)) stop('No daily climate records parsed from Haenertsburg climate workbook')
+haenertsburg_rain_daily <- haenertsburg_daily |>
+  filter(is.finite(rain_mm)) |>
+  select(site,season,date,datetime,rain_mm)
+if (!nrow(haenertsburg_rain_daily)) stop('No daily rainfall records parsed from Haenertsburg climate workbook')
+
+# Compare rainfall on matched calendar months: Mahela is available by month, while
+# Haenertsburg daily totals are summed to month only when the station has every day.
+mahela_monthly <- mahela_rain |>
+  mutate(month=as.Date(floor_date(datetime,'month'))) |>
+  group_by(month) |>
+  summarise(mahela_rain_mm=sum(rain_mm,na.rm=TRUE), mahela_records=n(), .groups='drop')
+haenertsburg_monthly <- haenertsburg_rain_daily |>
+  mutate(month=as.Date(floor_date(date,'month'))) |>
+  group_by(month) |>
+  summarise(
+    haenertsburg_rain_mm=sum(rain_mm,na.rm=TRUE),
+    haenertsburg_days=n_distinct(date),
+    days_expected=days_in_month(first(date)),
+    .groups='drop'
+  ) |>
+  filter(haenertsburg_days == days_expected)
+rainfall_overlap <- inner_join(mahela_monthly,haenertsburg_monthly,by='month') |>
+  arrange(month) |>
+  mutate(haenertsburg_minus_mahela_mm=haenertsburg_rain_mm-mahela_rain_mm)
+if (!nrow(rainfall_overlap)) stop('No complete overlapping months are available for Mahela and Haenertsburg rainfall comparison')
+rainfall_overlap_summary <- bind_rows(
+  rainfall_overlap |> mutate(period=as.character(year(month))),
+  rainfall_overlap |> mutate(period='Overall')
+) |>
+  group_by(period) |>
+  summarise(
+    months_compared=n(),
+    mahela_total_mm=sum(mahela_rain_mm),
+    haenertsburg_total_mm=sum(haenertsburg_rain_mm),
+    mean_bias_mm=mean(haenertsburg_minus_mahela_mm),
+    median_bias_mm=median(haenertsburg_minus_mahela_mm),
+    mean_absolute_error_mm=mean(abs(haenertsburg_minus_mahela_mm)),
+    rmse_mm=sqrt(mean(haenertsburg_minus_mahela_mm^2)),
+    pearson_r=if(n()>1) cor(mahela_rain_mm,haenertsburg_rain_mm,method='pearson') else NA_real_,
+    spearman_rho=if(n()>1) cor(mahela_rain_mm,haenertsburg_rain_mm,method='spearman') else NA_real_,
+    .groups='drop'
+  ) |>
+  arrange(period)
+write_csv(rainfall_overlap,file.path(out_dir,'mahela_haenertsburg_monthly_overlap.csv'))
+write_csv(rainfall_overlap_summary,file.path(out_dir,'mahela_haenertsburg_overlap_summary.csv'))
+
+rainfall_overlap_long <- bind_rows(
+  rainfall_overlap |> transmute(month,source='Mahela orchard',rain_mm=mahela_rain_mm),
+  rainfall_overlap |> transmute(month,source='Haenertsburg station (~15 km from Mahela)',rain_mm=haenertsburg_rain_mm)
+) |> mutate(calendar_year=factor(year(month)))
+p_overlap_time <- ggplot(rainfall_overlap_long,aes(month,rain_mm,color=source,group=source)) +
+  geom_line(linewidth=.7) + geom_point(size=1.5) + facet_wrap(~calendar_year,ncol=1,scales='free_x') +
+  scale_x_date(date_labels='%b',date_breaks='1 month') +
+  scale_y_continuous(limits=c(0,NA),expand=expansion(mult=c(0,.05))) +
+  labs(title='Monthly rainfall during the Mahela–Haenertsburg overlap',
+       subtitle='Haenertsburg is a nearby station about 15 km from Mahela',
+       x=NULL,y='Monthly rainfall (mm)',color='Source') +
+  theme_minimal(base_size=11) + theme(axis.text.x=element_text(angle=45,hjust=1),legend.position='top')
+ggsave(file.path(out_dir,'mahela_haenertsburg_monthly_overlap.png'),p_overlap_time,width=10,height=8,dpi=180)
+overall_overlap <- rainfall_overlap_summary |> filter(period=='Overall')
+p_overlap_scatter <- ggplot(rainfall_overlap,aes(mahela_rain_mm,haenertsburg_rain_mm)) +
+  geom_abline(intercept=0,slope=1,linetype='dashed',color='gray50') +
+  geom_point(alpha=.75,size=2) + geom_smooth(method='lm',se=FALSE,color='#B04A3A',linewidth=.7) +
+  coord_equal() +
+  labs(title='Paired monthly rainfall totals',
+       subtitle=sprintf('%d paired months; Pearson r = %.2f',overall_overlap$months_compared,overall_overlap$pearson_r),
+       x='Mahela orchard rainfall (mm)',y='Haenertsburg station rainfall (mm)') +
+  theme_minimal(base_size=11)
+ggsave(file.path(out_dir,'mahela_haenertsburg_rainfall_scatter.png'),p_overlap_scatter,width=12,height=4,dpi=180)
+
+# Compare matched daily means. Eight valid Mahela readings retain both hourly and
+# three-hourly logger days while excluding dates with very sparse coverage.
+mahela_daily <- weather |>
+  filter(site=='Mahela') |>
+  mutate(date=as.Date(datetime)) |>
+  group_by(season,date) |>
+  summarise(
+    mahela_temp_mean_c=mean(temp_c,na.rm=TRUE),
+    mahela_humidity_mean_pct=if(all(is.na(humidity_pct))) NA_real_ else mean(humidity_pct,na.rm=TRUE),
+    mahela_temp_records=sum(!is.na(temp_c)),
+    mahela_humidity_records=sum(!is.na(humidity_pct)),
+    .groups='drop'
+  )
+mahela_sampling <- mahela_daily |>
+  count(season,mahela_temp_records,name='days_at_record_count') |>
+  group_by(season) |>
+  slice_max(days_at_record_count,n=1,with_ties=FALSE) |>
+  ungroup() |>
+  transmute(season,expected_daily_records=mahela_temp_records,
+            minimum_daily_records=ceiling(.75*expected_daily_records))
+mahela_daily <- mahela_daily |>
+  left_join(mahela_sampling,by='season') |>
+  filter(mahela_temp_records>=minimum_daily_records,
+         mahela_humidity_records>=minimum_daily_records)
+daily_weather_overlap <- inner_join(
+  mahela_daily,
+  haenertsburg_daily |> select(date,haenertsburg_temp_mean_c=temp_mean_c,
+                               haenertsburg_humidity_mean_pct=humidity_mean_pct),
+  by='date'
+) |>
+  filter(is.finite(haenertsburg_temp_mean_c),is.finite(haenertsburg_humidity_mean_pct)) |>
+  arrange(date) |>
+  mutate(
+    temp_bias_c=haenertsburg_temp_mean_c-mahela_temp_mean_c,
+    humidity_bias_pct=haenertsburg_humidity_mean_pct-mahela_humidity_mean_pct
+  )
+if (!nrow(daily_weather_overlap)) stop('No overlapping daily temperature/humidity records are available for Mahela and Haenertsburg')
+summarise_daily_overlap <- function(data, mahela_column, haenertsburg_column, variable_name) {
+  bind_rows(
+    data |> mutate(period=as.character(year(date))),
+    data |> mutate(period='Overall')
+  ) |>
+    group_by(period) |>
+    summarise(
+      days_compared=n(),
+      mahela_mean=mean(.data[[mahela_column]],na.rm=TRUE),
+      haenertsburg_mean=mean(.data[[haenertsburg_column]],na.rm=TRUE),
+      mean_bias=mean(.data[[haenertsburg_column]]-.data[[mahela_column]],na.rm=TRUE),
+      median_bias=median(.data[[haenertsburg_column]]-.data[[mahela_column]],na.rm=TRUE),
+      mean_absolute_error=mean(abs(.data[[haenertsburg_column]]-.data[[mahela_column]]),na.rm=TRUE),
+      rmse=sqrt(mean((.data[[haenertsburg_column]]-.data[[mahela_column]])^2,na.rm=TRUE)),
+      pearson_r=if(n()>1) cor(.data[[mahela_column]],.data[[haenertsburg_column]],method='pearson') else NA_real_,
+      spearman_rho=if(n()>1) cor(.data[[mahela_column]],.data[[haenertsburg_column]],method='spearman') else NA_real_,
+      .groups='drop'
+    ) |>
+    mutate(variable=variable_name,.before=1)
+}
+daily_weather_overlap_summary <- bind_rows(
+  summarise_daily_overlap(daily_weather_overlap,'mahela_temp_mean_c','haenertsburg_temp_mean_c','Mean temperature (C)'),
+  summarise_daily_overlap(daily_weather_overlap,'mahela_humidity_mean_pct','haenertsburg_humidity_mean_pct','Mean relative humidity (%)')
+) |>
+  arrange(variable,period)
+write_csv(haenertsburg_daily,file.path(out_dir,'haenertsburg_daily_climate_clean.csv'))
+write_csv(daily_weather_overlap,file.path(out_dir,'mahela_haenertsburg_daily_weather_overlap.csv'))
+write_csv(daily_weather_overlap_summary,file.path(out_dir,'mahela_haenertsburg_daily_weather_summary.csv'))
+
+daily_weather_overlap_long <- bind_rows(
+  daily_weather_overlap |> transmute(date,season,variable='Mean temperature (C)',source='Mahela orchard',value=mahela_temp_mean_c),
+  daily_weather_overlap |> transmute(date,season,variable='Mean temperature (C)',source='Haenertsburg station (~15 km from Mahela)',value=haenertsburg_temp_mean_c),
+  daily_weather_overlap |> transmute(date,season,variable='Mean relative humidity (%)',source='Mahela orchard',value=mahela_humidity_mean_pct),
+  daily_weather_overlap |> transmute(date,season,variable='Mean relative humidity (%)',source='Haenertsburg station (~15 km from Mahela)',value=haenertsburg_humidity_mean_pct)
+) |>
+  group_by(variable,source,season) |>
+  arrange(date,.by_group=TRUE) |>
+  mutate(segment=cumsum(as.integer(date-lag(date,default=first(date)))>1L)) |>
+  ungroup() |>
+  mutate(season=factor(season,levels=sort(unique(season))))
+p_daily_weather_time <- ggplot(daily_weather_overlap_long,aes(date,value,color=source,group=source)) +
+  geom_line(aes(group=interaction(source,segment)),alpha=.8,linewidth=.55) +
+  geom_point(alpha=.45,size=.45) + facet_grid(variable~season,scales='free',space='free_x') +
+  scale_x_date(date_labels='%b',date_breaks='1 month') +
+  labs(title='Daily mean temperature and relative humidity: Mahela and Haenertsburg',
+       subtitle='Facets show each Mahela season and only its paired measurement period; the station is about 15 km away',
+       x=NULL,y=NULL,color='Source') +
+  theme_minimal(base_size=10) + theme(axis.text.x=element_text(angle=45,hjust=1),legend.position='top')
+ggsave(file.path(out_dir,'mahela_haenertsburg_daily_weather_timeseries.png'),p_daily_weather_time,width=12,height=8,dpi=180)
+
+daily_weather_scatter_long <- bind_rows(
+  daily_weather_overlap |> transmute(variable='Mean temperature (C)',mahela=mahela_temp_mean_c,haenertsburg=haenertsburg_temp_mean_c),
+  daily_weather_overlap |> transmute(variable='Mean relative humidity (%)',mahela=mahela_humidity_mean_pct,haenertsburg=haenertsburg_humidity_mean_pct)
+)
+p_daily_weather_scatter <- ggplot(daily_weather_scatter_long,aes(mahela,haenertsburg)) +
+  geom_abline(intercept=0,slope=1,linetype='dashed',color='gray50') +
+  geom_point(alpha=.35,size=.9) + geom_smooth(method='lm',se=FALSE,color='#B04A3A',linewidth=.7) +
+  facet_wrap(~variable,scales='free',ncol=2) +
+  labs(title='Paired daily mean temperature and humidity',
+       subtitle='Dashed line indicates equal values; the fitted line summarizes association',
+       x='Mahela orchard daily mean',y='Haenertsburg station daily mean') +
+  theme_minimal(base_size=10)
+ggsave(file.path(out_dir,'mahela_haenertsburg_daily_weather_scatter.png'),p_daily_weather_scatter,width=10,height=5,dpi=180)
+
 write_csv(rain_haka,file.path(out_dir,'haka_rain_events_clean.csv'))
 weekly_haka_rain <- rain_haka |>
   mutate(week_start=floor_date(datetime,'week',week_start=7)) |> # week starts on Sunday
@@ -178,27 +381,60 @@ weekly_haka_rain <- rain_haka |>
   summarise(rain_mm=sum(rain_mm,na.rm=TRUE), rain_events=n(), .groups='drop')
 write_csv(weekly_haka_rain,file.path(out_dir,'weekly_haka_rainfall.csv'))
 write_csv(mahela_rain,file.path(out_dir,'mahela_monthly_rain_clean.csv'))
-rain_month <- bind_rows(rain_haka |> mutate(month=floor_date(datetime,'month')),mahela_rain |> mutate(month=floor_date(datetime,'month'))) |>
-  group_by(site,season,month) |> summarise(rain_mm=sum(rain_mm,na.rm=TRUE),.groups='drop')
+write_csv(haenertsburg_rain_daily,file.path(out_dir,'haenertsburg_daily_rainfall_clean.csv'))
+weekly_haenertsburg_rain <- haenertsburg_rain_daily |>
+  mutate(week_start=floor_date(datetime,'week',week_start=7)) |> # week starts on Sunday
+  group_by(site,season,week_start) |>
+  summarise(rain_mm=sum(rain_mm,na.rm=TRUE), rain_days=n(), .groups='drop')
+write_csv(weekly_haenertsburg_rain,file.path(out_dir,'weekly_haenertsburg_rainfall.csv'))
+weekly_rain <- bind_rows(
+  weekly_haka_rain |> select(site,season,week_start,rain_mm),
+  weekly_haenertsburg_rain |> select(site,season,week_start,rain_mm)
+) |>
+  group_by(site,season) |>
+  arrange(week_start,.by_group=TRUE) |>
+  mutate(cumulative_rain_mm=cumsum(rain_mm)) |>
+  ungroup()
+write_csv(weekly_rain,file.path(out_dir,'weekly_rainfall.csv'))
+weekly_cum_scale <- max(weekly_rain$cumulative_rain_mm,na.rm=TRUE) / max(weekly_rain$rain_mm,na.rm=TRUE)
+rain_month <- bind_rows(
+  rain_haka |> mutate(month=as.Date(floor_date(datetime,'month'))) |> select(site,season,month,rain_mm),
+  mahela_rain |> mutate(month=as.Date(floor_date(datetime,'month'))) |> select(site,season,month,rain_mm),
+  haenertsburg_rain_daily |> mutate(month=as.Date(floor_date(date,'month'))) |> select(site,season,month,rain_mm)
+) |>
+  group_by(site,season,month) |> summarise(rain_mm=sum(rain_mm,na.rm=TRUE),.groups='drop') |>
+  group_by(site,season) |>
+  arrange(month,.by_group=TRUE) |>
+  mutate(cumulative_rain_mm=cumsum(rain_mm)) |>
+  ungroup()
 write_csv(rain_month,file.path(out_dir,'monthly_rainfall.csv'))
 
+monthly_cum_scale <- max(rain_month$cumulative_rain_mm,na.rm=TRUE) / max(rain_month$rain_mm,na.rm=TRUE)
 p4 <- ggplot(rain_month,aes(month,rain_mm,fill=season,group=season)) +
   geom_col(position='dodge') + facet_wrap(~site,scales='free_y',ncol=1) +
-  scale_x_datetime(date_labels='%b %Y',date_breaks='2 months') +
-  scale_y_continuous(limits=c(0,NA),expand=expansion(mult=c(0,.05))) +
-  labs(title='Monthly rainfall by site',subtitle='Panels use separate zero-based y-scales; colors distinguish seasons',x=NULL,y='Rainfall (mm)',fill='Season') +
+  geom_line(aes(y=cumulative_rain_mm/monthly_cum_scale,color=season,group=season),linewidth=.8) +
+  geom_point(aes(y=cumulative_rain_mm/monthly_cum_scale,color=season),size=1.2) +
+  scale_x_date(date_labels='%b %Y',date_breaks='2 months') +
+  scale_y_continuous(limits=c(0,NA),expand=expansion(mult=c(0,.05)),
+                     sec.axis=sec_axis(~.*monthly_cum_scale,name='Cumulative rainfall (mm)')) +
+  labs(title='Monthly rainfall by site',subtitle='Bars show monthly totals (left axis); lines show cumulative totals within each season (right axis)',x=NULL,y='Monthly rainfall (mm)',fill='Season',color='Season') +
   theme_minimal(base_size=11) + theme(axis.text.x=element_text(angle=45,hjust=1),legend.position='top')
 ggsave(file.path(out_dir,'monthly_rainfall.png'),p4,width=11,height=12,dpi=180)
-p7 <- ggplot(weekly_haka_rain,aes(week_start,rain_mm,fill=season)) +
+p7 <- ggplot(weekly_rain,aes(week_start,rain_mm,fill=season)) +
   geom_col(position='dodge') + facet_wrap(~site,ncol=1) +
+  geom_line(aes(y=cumulative_rain_mm/weekly_cum_scale,color=season,group=season),linewidth=.8) +
+  geom_point(aes(y=cumulative_rain_mm/weekly_cum_scale,color=season),size=1.1) +
   scale_x_datetime(date_labels='%b %Y',date_breaks='1 month') +
-  scale_y_continuous(limits=c(0,NA),expand=expansion(mult=c(0,.05))) +
-  labs(title='Weekly Haka rainfall',x=NULL,y='Rainfall (mm)',fill='Season') +
+  scale_y_continuous(limits=c(0,NA),expand=expansion(mult=c(0,.05)),
+                     sec.axis=sec_axis(~.*weekly_cum_scale,name='Cumulative rainfall (mm)')) +
+  labs(title='Weekly rainfall',subtitle='Bars show weekly totals (left axis); lines show cumulative totals within each season (right axis). Sources include Haka events and Haenertsburg daily totals.',x=NULL,y='Weekly rainfall (mm)',fill='Season',color='Season') +
   theme_minimal(base_size=11) + theme(axis.text.x=element_text(angle=45,hjust=1),legend.position='top')
 ggsave(file.path(out_dir,'weekly_rainfall.png'),p7,width=11,height=7,dpi=180)
 
-cat('Parsed weather rows:',nrow(weather),' | Haka rain events:',nrow(rain_haka),' | Mahela monthly rain rows:',nrow(mahela_rain),'\n')
+cat('Parsed weather rows:',nrow(weather),' | Haka rain events:',nrow(rain_haka),' | Mahela monthly rain rows:',nrow(mahela_rain),' | Haenertsburg daily climate rows:',nrow(haenertsburg_daily),' | matched rainfall months:',nrow(rainfall_overlap),' | matched daily climate days:',nrow(daily_weather_overlap),'\n')
 print(summ)
+print(rainfall_overlap_summary)
+print(daily_weather_overlap_summary)
 
 
 

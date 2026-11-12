@@ -299,7 +299,9 @@ dat %>%
 
 ## Seasonal Weather
 
-The below plots show weekly weather variables by Orchard and season. 
+The below plots show weekly weather variables by Orchard and season.  See the report Pseudocercospora weather station data.Rmd which imports and compares daily, weekly and monthly summaries of temp, ppt, and RH. In that report
+
+
 
 Notes:
 
@@ -424,7 +426,7 @@ ggplot(
 
 ```
 
-### Weather viz
+### Weather summary per Orchard
 
 ```{r weather_viz}
 
