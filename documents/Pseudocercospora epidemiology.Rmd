@@ -99,12 +99,13 @@ styled_kable <- function(x, caption = NULL, digits = 2) {
 
 ```{r import}
 
-Sporecounts_Master <- readxl::read_excel("../data/Sporecounts_Master.xlsx", 
+Sporecounts_Master <- readxl::read_excel("./data/Sporecounts_Master.xlsx", 
     col_types = c("numeric", "numeric", "numeric", 
         "numeric", "numeric", "numeric", 
         "numeric", "numeric", "text", "text", 
         "text", "text", "text", "date", "date")) |> 
-  mutate(Trap= as.factor(Trap), Week= as.factor(Week))
+  mutate(Trap= as.factor(Trap), Week= as.factor(Week),
+    lognSpores = log1p(nSpores))
 
 ```
 
@@ -160,11 +161,6 @@ styled_kable(
 ### Data Checks
 
 ```{r spore_counts}
-
-# Identify numeric variables
-numeric_vars <- Sporecounts_Master %>%
-  select(where(is.numeric)) %>%
-  names()
 
 # Missing values by variable for each
 
@@ -250,9 +246,6 @@ styled_kable(
 
 ```{r spore_explore_plots}
 
-# Numeric variables to plot
-numeric_vars <- c("nSpores", "Tmax", "Tmin", "Tave", "Rhm", "Rain")
-
 df_long <- Sporecounts_Master %>%
   pivot_longer(
     cols = all_of(numeric_vars),
@@ -307,13 +300,13 @@ Sporecounts_Master %>%
 ```{r spore_plots}
 
 
-ggplot(df_clean, aes(x = nSpores, fill= Orchard)) +
+ggplot(Sporecounts_Master, aes(x = nSpores, fill= Orchard)) +
   geom_histogram(bins = 30, colour = "white") +
   labs(x = "Weekly spore count", y = "Number of observations") +
   facet_wrap(~Season)+
   theme_bw()
 
-ggplot(df_clean, aes(Week, nSpores, color= Trap, group= Season)) +
+ggplot(Sporecounts_Master, aes(Week, nSpores, color= Trap, group= Trap)) +
   geom_line(alpha = 0.6) +
   geom_point(size = 1.5) +
   facet_wrap(~ Orchard*Season, scales = "free_y") +
@@ -324,6 +317,53 @@ ggplot(df_clean, aes(Week, nSpores, color= Trap, group= Season)) +
   ) +
   theme_bw()
 
+# calc corr between traps
+
+# Convert long data to wide format
+spores_wide <- Sporecounts_Master %>%
+  select(Orchard, Season, Week, Start_date,
+         Trap, nSpores) %>%
+  pivot_wider(
+    names_from = Trap,
+    values_from = nSpores,
+    names_prefix = "Trap_"
+  ) %>%
+  filter(!is.na(Trap_1), !is.na(Trap_2))
+
+ggplot(spores_wide, aes(x=Trap_1, y= Trap_2))+
+  geom_point()+
+  facet_wrap(~Orchard+Season)+
+  geom_smooth(method = "lm",
+              formula = y ~ x,
+              se = TRUE,
+              color = "blue") +
+ # Identity line (1:1 relationship)
+  geom_abline(
+    intercept = 0,
+    slope = 1,
+    linetype = "dashed",
+    color = "red",
+    linewidth = 0.8
+  ) +
+  ggpmisc::stat_poly_eq(
+    formula = y ~ x+0,
+    aes(label = paste(
+      after_stat(eq.label),
+      after_stat(rr.label),
+      sep = "~~~"
+    )),
+    parse = TRUE,
+    label.x = "left",
+    label.y = "top",
+    size = 3
+  ) +
+   labs(
+    x = "Trap 1 spore count",
+    y = "Trap 2 spore count",
+    title = "Correlation in weekly spore counts between traps"
+  ) +
+
+  theme_bw()
 
 ```
 
@@ -332,9 +372,9 @@ ggplot(df_clean, aes(Week, nSpores, color= Trap, group= Season)) +
 
 ```{r spore_phen}
 
-df_clean |> group_by(Orchard, Season, Phenology, Week) |> 
+Sporecounts_Master |> group_by(Orchard, Season, Phenology, Week) |> 
   summarize(nSpores = mean(nSpores, na.rm= TRUE)) |> 
-    ggplot(aes(x = nSpores)) +
+    ggplot(aes(x = nSpores, fill = Orchard)) +
   geom_histogram(
     bins = 20,
     alpha = 0.5,
@@ -344,12 +384,12 @@ df_clean |> group_by(Orchard, Season, Phenology, Week) |>
     ~Phenology,
     scales = "fixed"
   ) +
-  theme_classic() +
+  theme_classic() + theme(legend.position = c(0.8, 0.1))+
   labs(
-    x = "Value",
+    x = "Mean nSpores per trap",
     y = "Frequency",
-    fill = "Season",
-    title = "Histograms of weekly spore Counts by Phenology"
+    fill = "Orchard",
+    title = "Histograms of mean weekly spore counts per trap by Phenology"
   )
 
 ```
@@ -545,7 +585,7 @@ The report "weather station analysis.Rmd" includes daily and weekly weather data
 ```
 
 
-## Does spore release correlate with weekly climatic conditions (temperature, relative humidity, rain)?
+## Do spore counts correlate with weekly climatic conditions (temperature, relative humidity, rain)?
 
 -structured model-selection workflow that evaluates weather effects, including time lags, predictor interactions, temporal autocorrelation, and out-of-sample predictive performance.
 
@@ -621,7 +661,7 @@ dat_lag <- make_lags(df_clean, max_lag = 6)
 
 weather_long <- df_clean %>%
   pivot_longer(
-    cols = c(Tave, Rhm, Rain),
+    cols = c(Tave, Rhm, Rain, Tmin),
     names_to = "Predictor",
     values_to = "Value"
   )
@@ -636,7 +676,7 @@ library(corrplot)
 
 corr_vars <- dat_lag %>%
   select(
-    nSpores, Tave, Tmin, Rhm, Rain, Tmin_lag1, Tmin_lag2,
+    nSpores, lognSpores, Tave, Tmin, Rhm, Rain, Tmin_lag1, Tmin_lag2,
     Tave_lag1, Tave_lag2,
     Rhm_lag1, Rhm_lag2,
     Rain_lag1, Rain_lag2
@@ -711,6 +751,12 @@ weather_plots <- weather_long %>%
         scales = "free_x"
       ) +
       theme_classic() +
+       stat_cor(
+    method = "pearson",
+    aes(label = paste(after_stat(r.label),
+                      after_stat(p.label),
+                      sep = "~`,`~"))
+  ) +
       labs(
         x = unique(dat$WeatherVariable),
         y = "log(<Mean number of spores per trap + 1)",
@@ -738,49 +784,344 @@ Weekly spore counts look to be:
 
 ### Fit Darvas model (weekly rainfall and Tave)
 
+Fit 4 sets of models:
+
+Individual Orchard × Season: One model for every combination.
+
+
+Individual Orchard: One model per orchard, pooling seasons.
+
+
+Individual Season: One model per season, pooling orchards.
+
+
+Overall: One model using all observations.
+
+#### Current week's weather
 ```{r darvas}
 
-darvas<-lm(nSpores~ Tave * Rain, data= dat_lag_2)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(broom)
 
-summary(darvas)
-  
-visreg::visreg2d(darvas, x= "Tave", y= "Rain")
+df_model <- dat_lag_2 %>%
+  select(nSpores, Tave, Rain, Orchard, Season) %>%
+  filter(complete.cases(.))
+
+# functions to fit various model structures
+
+fit_grouped_models <- function(data, groups, model_set) {
+
+  if (length(groups) > 0) {
+
+    model_data <- data %>%
+      group_by(across(all_of(groups))) %>%
+      nest()
+
+  } else {
+
+    model_data <- tibble(data = list(data))
+  }
+
+  model_data %>%
+    mutate(
+      Model_set = model_set,
+      n = map_int(data, nrow),
+      model = map(data, ~ lm(nSpores ~ Tave + Rain,
+                             data = .x)),
+      coefficients = map(model, tidy),
+      fit = map(model, glance)
+    )
+}
+
+# Orchard x Season combinations
+models_orchard_season <- fit_grouped_models(
+  df_model,
+  c("Orchard", "Season"),
+  "Orchard x Season"
+)
+
+# Individual orchards, pooling seasons
+models_orchard <- fit_grouped_models(
+  df_model,
+  "Orchard",
+  "Orchard"
+)
+
+# Individual seasons, pooling orchards
+models_season <- fit_grouped_models(
+  df_model,
+  "Season",
+  "Season"
+)
+
+# Overall model
+models_overall <- fit_grouped_models(
+  df_model,
+  character(0),
+  "Overall"
+)
+
+# Combine all models
+all_models <- bind_rows(
+  models_orchard_season,
+  models_orchard,
+  models_season,
+  models_overall
+)
+
+model_coefficients <- all_models %>%
+  select(Model_set, Orchard, Season, coefficients) %>%
+  unnest(coefficients) %>%
+  mutate(
+    Orchard = coalesce(Orchard, "Both"),
+    Season = coalesce(Season, "Both")
+  )
+
+styled_kable(
+  model_coefficients,
+  caption = "Darvas model fits by season and orchard"
+)
 
 
-darvas_log<-lm(log1p(nSpores) ~ Tave * Rain, data= dat_lag_2)
+model_fit <- all_models %>%
+  select(Model_set, Orchard, Season, fit) %>%
+  unnest(fit) %>%
+  select(Model_set, Orchard, Season,
+         r.squared, adj.r.squared,
+         sigma, AIC, BIC, p.value) %>%
+  mutate(
+    Orchard = coalesce(Orchard, "Both"),
+    Season = coalesce(Season, "Both")
+  )
 
-summary(darvas_log)
-  
-visreg::visreg2d(darvas_log, x= "Tave", y= "Rain")
+styled_kable(
+  model_fit,
+  caption = "Darvas-type model fits by season and orchard of current weekly weather"
+)
 
-# 3D interactive 
+# plot model coeffs
+ggplot(
+  model_coefficients %>%
+    filter(term %in% c("Tave", "Rain")),
+  aes(x = Orchard, y = estimate,
+      color = Season)
+) +
 
-visreg::visreg2d(darvas_log, x= "Tave", y= "Rain", plot= FALSE) |> rgl::persp3d()
+  geom_point(position = position_dodge(width = 0.4),
+             size = 2.5) +
 
+  geom_errorbar(
+    aes(ymin = estimate - 1.96 * std.error,
+        ymax = estimate + 1.96 * std.error),
+    position = position_dodge(width = 0.4),
+    width = 0.2
+  ) +
 
+  facet_wrap(~term, scales = "free_y") +
+
+  geom_hline(yintercept = 0,
+             linetype = "dashed") +
+
+  theme_bw() + 
+
+  labs(y = "Regression coefficient (± 95% CI)",
+    title = "Effects of current weekly temperature and rainfall on spore abundance"
+  ) 
+
+# model the Orchard and Seasoninteractions
+
+model_interaction <- lm(
+  nSpores ~ (Tave + Rain) * Orchard * Season,
+  data = df_model
+)
+
+model_additive <- lm(
+  nSpores ~ Tave + Rain + Orchard + Season,
+  data = df_model
+)
+
+anova(model_additive, model_interaction)
 ```
 
-### Fit other linear combinations
+#### Prior week's weather (lag 1)
+```{r darvas}
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(broom)
+
+df_model <- dat_lag_2 %>%
+  select(nSpores, Tave_lag1, Rain_lag1, Orchard, Season) %>%
+  filter(complete.cases(.))
+
+# functions to fit various model structures
+
+fit_grouped_models_lag <- function(data, groups, model_set) {
+
+  if (length(groups) > 0) {
+
+    model_data <- data %>%
+      group_by(across(all_of(groups))) %>%
+      nest()
+
+  } else {
+
+    model_data <- tibble(data = list(data))
+  }
+
+  model_data %>%
+    mutate(
+      Model_set = model_set,
+      n = map_int(data, nrow),
+      model = map(data, ~ lm(nSpores ~ Tave_lag1 + Rain_lag1,
+                             data = .x)),
+      coefficients = map(model, tidy),
+      fit = map(model, glance)
+    )
+}
+
+# Orchard x Season combinations
+models_orchard_season <- fit_grouped_models_lag(
+  df_model,
+  c("Orchard", "Season"),
+  "Orchard x Season"
+)
+
+# Individual orchards, pooling seasons
+models_orchard <- fit_grouped_models_lag(
+  df_model,
+  "Orchard",
+  "Orchard"
+)
+
+# Individual seasons, pooling orchards
+models_season <- fit_grouped_models_lag(
+  df_model,
+  "Season",
+  "Season"
+)
+
+# Overall model
+models_overall <- fit_grouped_models_lag(
+  df_model,
+  character(0),
+  "Overall"
+)
+
+# Combine all models
+all_models <- bind_rows(
+  models_orchard_season,
+  models_orchard,
+  models_season,
+  models_overall
+)
+
+model_coefficients <- all_models %>%
+  select(Model_set, Orchard, Season, coefficients) %>%
+  unnest(coefficients) %>%
+  mutate(
+    Orchard = coalesce(Orchard, "Both"),
+    Season = coalesce(Season, "Both")
+  )
+
+styled_kable(
+  model_coefficients,
+  caption = "Darvas model fits by season and orchard"
+)
+
+
+model_fit <- all_models %>%
+  select(Model_set, Orchard, Season, fit) %>%
+  unnest(fit) %>%
+  select(Model_set, Orchard, Season,
+         r.squared, adj.r.squared,
+         sigma, AIC, BIC, p.value) %>%
+  mutate(
+    Orchard = coalesce(Orchard, "Both"),
+    Season = coalesce(Season, "Both")
+  )
+
+styled_kable(
+  model_fit,
+  caption = "Darvas-type model fits by season and orchard of prior weekly weather"
+)
+
+# plot model coeffs
+ggplot(
+  model_coefficients %>%
+    filter(term %in% c("Tave_lag1", "Rain_lag1")),
+  aes(x = Orchard, y = estimate,
+      color = Season)
+) +
+
+  geom_point(position = position_dodge(width = 0.4),
+             size = 2.5) +
+
+  geom_errorbar(
+    aes(ymin = estimate - 1.96 * std.error,
+        ymax = estimate + 1.96 * std.error),
+    position = position_dodge(width = 0.4),
+    width = 0.2
+  ) +
+
+  facet_wrap(~term, scales = "free_y") +
+
+  geom_hline(yintercept = 0,
+             linetype = "dashed") +
+
+  theme_bw() + 
+
+  labs(y = "Regression coefficient (± 95% CI)",
+    title = "Effects of current weekly temperature and rainfall on spore abundance"
+  ) 
+
+# model the Orchard and Season interactions
+
+model_interaction <- lm(
+  nSpores ~ (Tave_lag1 + Rain_lag1) * Orchard * Season,
+  data = df_model
+)
+
+model_additive <- lm(
+  nSpores ~ Tave_lag1 + Rain_lag1 + Orchard + Season,
+  data = df_model
+)
+
+anova(model_additive, model_interaction)
+```
+
+
+### Fit linear combinations of Tmin and Rhm
 
 ```{r lm_mods}
 
-lm1<-lm(log1p(nSpores)~ Tmin * Rhm, data= dat_lag_2)
+TminXRhm<-lm(log1p(nSpores)~ Tmin * Rhm, data= dat_lag_2)
 
-lm2<-lm(log1p(nSpores)~ Tmin * Rhm_lag1, data= dat_lag_2)
+TminXRhm_lag1<-lm(log1p(nSpores)~ Tmin * Rhm_lag1, data= dat_lag_2)
 
-lm3<-lm(log1p(nSpores)~ Tmin_lag1 * Rhm, data= dat_lag_2)
+Tmin_lag1XRhm_log<-lm(log1p(nSpores)~ Tmin_lag1 * Rhm, data= dat_lag_2)
 
-lm4<-lm(log1p(nSpores)~ Tmin_lag1 * Rhm_lag1, data= dat_lag_2)
+Tmin_lag1XRhm_lag1_log<-lm(log1p(nSpores)~ Tmin_lag1 * Rhm_lag1, data= dat_lag_2)
 
-AIC(lm1, lm2,lm3,lm4)
 
-summary(lm1)
+# Combine all models
+all_models <- list(
+  TminXRhm = TminXRhm,
+  TminXRhm_lag1 = TminXRhm_lag1,
+  Tmin_lag1XRhm_log = Tmin_lag1XRhm_log,
+  Tmin_lag1XRhm_lag1_log = Tmin_lag1XRhm_lag1_log
+) %>%
+  purrr::imap_dfr(~ broom::glance(.x) %>%
+                    mutate(Model = .y)) %>%
+  select(Model, everything())
 
-performance::performance(lm1)
-
-visreg::visreg2d(lm1, x= "Tmin", y= "Rhm")
-
-visreg::visreg2d(lm1, x= "Tmin", y= "Rhm", plot= FALSE) |> rgl::persp3d()
+styled_kable(
+  all_models,
+  caption = "Model fits with Rhm and Tmin"
+)
 
 ```
 
@@ -923,7 +1264,7 @@ m5 <- gam(
   nSpores ~
     s(Tave, k = 4) +
     te(Rhm, Rain, k = c(4, 4)) +  # does rainfall have different effects at different humidity levels.
-    Phenology +
+    #Phenology +
     s(Trap, bs = "re")+ 
      s(Orchard, bs="re"),
   data = data_model,
