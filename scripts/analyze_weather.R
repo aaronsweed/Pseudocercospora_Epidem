@@ -6,14 +6,14 @@ dir.create(out_dir, showWarnings=FALSE)
 
 # Haka 2024-25: hourly CSV with canopy temperature and relative humidity.
 haka_2425 <- read_csv(file.path(data_dir,'Haka_readings2024.2025.csv'), show_col_types=FALSE, trim_ws=TRUE) |>
-  transmute(site='Haka', season='2024-25', datetime=ymd_hms(str_trim(DateTime)), temp_c=as.numeric(Canopy), humidity_pct=as.numeric(Humidity))
+  transmute(site='Haka', season='2024-25', datetime=ymd_hms(str_trim(DateTime)), temp_c=as.numeric(Canopy), humidity_pct=as.numeric(Humidity),source_file='Haka_readings2024.2025.csv')
 # Haka 2025-26: Excel stores date and time as Excel serial values; the logger includes blank separator rows.
 haka_raw <- read_excel(file.path(data_dir,'Haka_readings_2025.2026.xlsx'), sheet='Block E Bottom weather variable', skip=2, col_names=FALSE, .name_repair='minimal')
 names(haka_raw) <- c('date','time','temp','humidity')
 haka_2526 <- haka_raw |>
   transmute(date_num=suppressWarnings(as.numeric(date)), time_num=suppressWarnings(as.numeric(time)), temp_c=suppressWarnings(as.numeric(temp)), humidity_pct=suppressWarnings(as.numeric(humidity))) |>
   filter(!is.na(date_num), !is.na(time_num)) |>
-  transmute(site='Haka', season='2025-26', datetime=as.POSIXct(as.Date(date_num, origin='1899-12-30')) + time_num*86400, temp_c, humidity_pct)
+  transmute(site='Haka', season='2025-26', datetime=as.POSIXct(as.Date(date_num, origin='1899-12-30')) + time_num*86400, temp_c, humidity_pct,source_file='Haka_readings_2025.2026.xlsx')
 
 # Mahela 2023-24 uses decimal commas; 2024-25 uses decimal points.
 read_mahela_semicolon <- function(file, season, decimal_mark='.') {
@@ -28,7 +28,7 @@ read_mahela_semicolon <- function(file, season, decimal_mark='.') {
   names(x) <- paste0('column_', seq_along(x))
   dt <- suppressWarnings(mdy_hms(paste(str_trim(as.character(x[[3]])),
                                        str_trim(as.character(x[[4]])))))
-  tibble(site='Mahela', season=season, datetime=dt,
+  tibble(site='Mahela', season=season, datetime=dt,source_file=file,
          temp_c=suppressWarnings(as.numeric(x[[5]])),
          humidity_pct=suppressWarnings(as.numeric(x[[6]]))) |>
     filter(!is.na(datetime), !is.na(temp_c))
@@ -39,7 +39,7 @@ mahela_2425 <- read_mahela_semicolon('Mahela_readings2024.2025.csv','2024-25','.
 lines <- readLines(file.path(data_dir,'Mahela_readings_2025.2026.csv'), warn=FALSE)
 rows <- lines[str_detect(lines, '^\\s*\\d{1,2}-[A-Za-z]{3}-\\d{2};')]
 parts <- str_split_fixed(rows, ';', 4)
-mahela_2526 <- tibble(site='Mahela', season='2025-26', datetime=dmy_hms(str_trim(paste(parts[,1],parts[,2]))), temp_c=parse_number(str_trim(parts[,3])), humidity_pct=parse_number(str_trim(parts[,4]))) |>
+mahela_2526 <- tibble(site='Mahela', season='2025-26', datetime=dmy_hms(str_trim(paste(parts[,1],parts[,2]))), temp_c=parse_number(str_trim(parts[,3])), humidity_pct=parse_number(str_trim(parts[,4])),source_file='Mahela_readings_2025.2026.csv') |>
   mutate(temp_c=if_else(temp_c < -10 | temp_c > 50, NA_real_, temp_c)) |>
   filter(!is.na(datetime), !is.na(temp_c))
 
@@ -167,11 +167,19 @@ rain_files <- c('Haka_KZNrain_2024.2025.csv','Haka_KZNrain_2025.2026.csv')
 rain_haka <- bind_rows(lapply(rain_files,function(f){
   x <- read_delim(file.path(data_dir,f),delim=';',skip=0,show_col_types=FALSE,trim_ws=TRUE,na=c('','','NA'))
   names(x) <- make.names(names(x)); names(x)[1:4] <- c('field','series','datetime','value')
-  x |> filter(!is.na(datetime),!is.na(value)) |> transmute(site='Haka',season=if_else(str_detect(f,'2024'),'2024-25','2025-26'),datetime=ymd_hm(datetime),rain_mm=as.numeric(value))
+  x |> filter(!is.na(datetime),!is.na(value)) |> transmute(site='Haka',season=if_else(str_detect(f,'2024'),'2024-25','2025-26'),datetime=ymd_hm(datetime),rain_mm=as.numeric(value),source_file=f)
 }))
-mahela_rain <- read_excel(file.path(data_dir,'Mahela Rainfall_Tableau (Live).xls'),sheet='Mahela filtered') |> 
-  filter(Farm=='Sandford_Mahela') |> mutate(month_num=match(Month,month.name), datetime=as.POSIXct(make_date(as.integer(Season),month_num,1))) |> 
-  transmute(site='Mahela',season=if_else(Season==2024,'2024-25',as.character(Season)),datetime,rain_mm=as.numeric(Rainfall)) |> filter(!is.na(datetime))
+mahela_rain <- read_excel(file.path(data_dir,'Mahela Rainfall_Tableau (Live).xls'),sheet='Mahela filtered') |>
+  filter(Farm=='Sandford_Mahela') |>
+  mutate(
+    month_num=match(Month,month.name),
+    date=if_else(is.na(Date), make_date(as.integer(Season),month_num,1), as.Date(Date)),
+    season_start_year=if_else(month(date)>=10L,year(date),year(date)-1L),
+    season=sprintf('%d-%02d',season_start_year,(season_start_year+1L) %% 100L)
+  ) |>
+  transmute(site='Mahela',season,date,datetime=as.POSIXct(date,tz='Africa/Johannesburg'),source_file='Mahela Rainfall_Tableau (Live).xls',
+            rain_mm=as.numeric(Rainfall),rainfall_resolution=if_else(is.na(Date),'monthly total','near-daily estimate')) |>
+  filter(!is.na(date),is.finite(rain_mm))
 
 # Haenertsburg daily climate workbook: rows 1-2 contain location metadata, row 4 has headers.
 # It provides daily mean/max/min temperature, daily rainfall, and mean/max relative humidity.
@@ -195,25 +203,29 @@ haenertsburg_daily <- haenertsburg_raw |>
   filter(!is.na(date)) |>
   mutate(
     site='Haenertsburg (~15 km from Mahela)',
+    source_file='Haenertsburg climate 2023.2024.xlsx',
     season_start_year=if_else(month(date) >= 10L, year(date), year(date)-1L),
     season=sprintf('%d-%02d', season_start_year, (season_start_year+1L) %% 100L),
     datetime=as.POSIXct(date, tz='Africa/Johannesburg')
   ) |>
-  select(site,season,date,datetime,temp_mean_c,temp_max_c,temp_min_c,
+  select(site,season,source_file,date,datetime,temp_mean_c,temp_max_c,temp_min_c,
          humidity_mean_pct,humidity_max_pct,rain_mm) |>
   arrange(date)
 if (!nrow(haenertsburg_daily)) stop('No daily climate records parsed from Haenertsburg climate workbook')
 haenertsburg_rain_daily <- haenertsburg_daily |>
   filter(is.finite(rain_mm)) |>
-  select(site,season,date,datetime,rain_mm)
+  select(site,season,source_file,date,datetime,rain_mm)
 if (!nrow(haenertsburg_rain_daily)) stop('No daily rainfall records parsed from Haenertsburg climate workbook')
 
-# Compare rainfall on matched calendar months: Mahela is available by month, while
-# Haenertsburg daily totals are summed to month only when the station has every day.
+# Compare rainfall on matched calendar months. Where Mahela has dated estimates,
+# use those records; otherwise use its month-level total. This avoids counting a
+# monthly total and its dated estimates twice in the same month.
 mahela_monthly <- mahela_rain |>
-  mutate(month=as.Date(floor_date(datetime,'month'))) |>
+  mutate(month=as.Date(floor_date(date,'month'))) |>
   group_by(month) |>
-  summarise(mahela_rain_mm=sum(rain_mm,na.rm=TRUE), mahela_records=n(), .groups='drop')
+  filter(if (any(rainfall_resolution=='near-daily estimate')) rainfall_resolution=='near-daily estimate' else TRUE) |>
+  summarise(mahela_rain_mm=sum(rain_mm,na.rm=TRUE), mahela_records=n(),
+            mahela_resolution=first(rainfall_resolution), .groups='drop')
 haenertsburg_monthly <- haenertsburg_rain_daily |>
   mutate(month=as.Date(floor_date(date,'month'))) |>
   group_by(month) |>
@@ -387,8 +399,16 @@ weekly_haenertsburg_rain <- haenertsburg_rain_daily |>
   group_by(site,season,week_start) |>
   summarise(rain_mm=sum(rain_mm,na.rm=TRUE), rain_days=n(), .groups='drop')
 write_csv(weekly_haenertsburg_rain,file.path(out_dir,'weekly_haenertsburg_rainfall.csv'))
+weekly_mahela_rain <- mahela_rain |>
+  filter(rainfall_resolution=='near-daily estimate') |>
+  mutate(datetime=as.POSIXct(date,tz='Africa/Johannesburg'),
+         week_start=floor_date(datetime,'week',week_start=7)) |>
+  group_by(site,season,week_start) |>
+  summarise(rain_mm=sum(rain_mm,na.rm=TRUE),rain_records=n(),.groups='drop')
+write_csv(weekly_mahela_rain,file.path(out_dir,'weekly_mahela_rainfall.csv'))
 weekly_rain <- bind_rows(
   weekly_haka_rain |> select(site,season,week_start,rain_mm),
+  weekly_mahela_rain |> select(site,season,week_start,rain_mm),
   weekly_haenertsburg_rain |> select(site,season,week_start,rain_mm)
 ) |>
   group_by(site,season) |>
@@ -399,7 +419,9 @@ write_csv(weekly_rain,file.path(out_dir,'weekly_rainfall.csv'))
 weekly_cum_scale <- max(weekly_rain$cumulative_rain_mm,na.rm=TRUE) / max(weekly_rain$rain_mm,na.rm=TRUE)
 rain_month <- bind_rows(
   rain_haka |> mutate(month=as.Date(floor_date(datetime,'month'))) |> select(site,season,month,rain_mm),
-  mahela_rain |> mutate(month=as.Date(floor_date(datetime,'month'))) |> select(site,season,month,rain_mm),
+  mahela_monthly |> transmute(site='Mahela',season=sprintf('%d-%02d',if_else(month(month)>=10L,year(month),year(month)-1L),
+                                      (if_else(month(month)>=10L,year(month),year(month)-1L)+1L) %% 100L),
+                              month,rain_mm=mahela_rain_mm),
   haenertsburg_rain_daily |> mutate(month=as.Date(floor_date(date,'month'))) |> select(site,season,month,rain_mm)
 ) |>
   group_by(site,season,month) |> summarise(rain_mm=sum(rain_mm,na.rm=TRUE),.groups='drop') |>
@@ -427,9 +449,61 @@ p7 <- ggplot(weekly_rain,aes(week_start,rain_mm,fill=season)) +
   scale_x_datetime(date_labels='%b %Y',date_breaks='1 month') +
   scale_y_continuous(limits=c(0,NA),expand=expansion(mult=c(0,.05)),
                      sec.axis=sec_axis(~.*weekly_cum_scale,name='Cumulative rainfall (mm)')) +
-  labs(title='Weekly rainfall',subtitle='Bars show weekly totals (left axis); lines show cumulative totals within each season (right axis). Sources include Haka events and Haenertsburg daily totals.',x=NULL,y='Weekly rainfall (mm)',fill='Season',color='Season') +
+  labs(title='Weekly rainfall',subtitle='Bars show weekly totals (left axis); lines show cumulative totals within each season (right axis). Mahela uses dated near-daily estimates; its monthly-only totals are not apportioned to weeks.',x=NULL,y='Weekly rainfall (mm)',fill='Season',color='Season') +
   theme_minimal(base_size=11) + theme(axis.text.x=element_text(angle=45,hjust=1),legend.position='top')
 ggsave(file.path(out_dir,'weekly_rainfall.png'),p7,width=11,height=7,dpi=180)
+
+# Compact station-by-season inventory: temporal resolution, observation count,
+# and coverage period for temperature, humidity, and rainfall.
+coverage_text <- function(n, start, end, resolution) {
+  ifelse(n > 0, paste0(resolution,' (n=',n,'; ',start,' to ',end,')'), 'Not available')
+}
+weather_availability <- weather |>
+  group_by(site,season) |>
+  summarise(
+    Temperature=coverage_text(n(),format(as.Date(min(datetime)),'%Y-%m-%d'),format(as.Date(max(datetime)),'%Y-%m-%d'),'Hourly'),
+    Humidity=coverage_text(sum(!is.na(humidity_pct)),format(as.Date(min(datetime[!is.na(humidity_pct)])),'%Y-%m-%d'),format(as.Date(max(datetime[!is.na(humidity_pct)])),'%Y-%m-%d'),'Hourly'),
+    `Temperature file`=paste(sort(unique(source_file)),collapse='; '),
+    `Humidity file`=paste(sort(unique(source_file[!is.na(humidity_pct)])),collapse='; '),
+    .groups='drop'
+  )
+haen_availability <- haenertsburg_daily |>
+  group_by(site,season) |>
+  summarise(
+    Temperature=coverage_text(sum(!is.na(temp_mean_c)),format(min(date[!is.na(temp_mean_c)]),'%Y-%m-%d'),format(max(date[!is.na(temp_mean_c)]),'%Y-%m-%d'),'Daily mean'),
+    Humidity=coverage_text(sum(!is.na(humidity_mean_pct)),format(min(date[!is.na(humidity_mean_pct)]),'%Y-%m-%d'),format(max(date[!is.na(humidity_mean_pct)]),'%Y-%m-%d'),'Daily mean'),
+    `Temperature file`=first(source_file),
+    `Humidity file`=first(source_file),
+    .groups='drop'
+  )
+rain_availability <- bind_rows(
+  rain_haka |> transmute(site,season,date=as.Date(datetime),resolution='Event'),
+  mahela_rain |> transmute(site,season,date,resolution=if_else(rainfall_resolution=='monthly total','Monthly total','Near-daily estimate')),
+  haenertsburg_rain_daily |> transmute(site,season,date,resolution='Daily')
+) |>
+  group_by(site,season) |>
+  summarise(
+    Rainfall=paste(vapply(unique(resolution),function(r) {
+      d <- date[resolution==r]
+      paste0(r,' (n=',length(d),'; ',format(min(d),'%Y-%m-%d'),' to ',format(max(d),'%Y-%m-%d'),')')
+    },character(1)),collapse='; '),
+    `Rainfall file`=paste(sort(unique(c(
+      rain_haka$source_file[rain_haka$site==first(site)&rain_haka$season==first(season)],
+      mahela_rain$source_file[mahela_rain$site==first(site)&mahela_rain$season==first(season)],
+      haenertsburg_rain_daily$source_file[haenertsburg_rain_daily$site==first(site)&haenertsburg_rain_daily$season==first(season)]
+    ))),collapse='; '),
+    .groups='drop'
+  )
+station_season_availability <- full_join(weather_availability,haen_availability,by=c('site','season'),suffix=c('_logger','_station')) |>
+  transmute(site,season,
+            Temperature=coalesce(Temperature_logger,Temperature_station),
+            Humidity=coalesce(Humidity_logger,Humidity_station),
+            `Temperature file`=coalesce(`Temperature file_logger`,`Temperature file_station`),
+            `Humidity file`=coalesce(`Humidity file_logger`,`Humidity file_station`)) |>
+  full_join(rain_availability,by=c('site','season')) |>
+  mutate(across(c(Temperature,Humidity,Rainfall,`Temperature file`,`Humidity file`,`Rainfall file`),~coalesce(.x,'Not available'))) |>
+  arrange(site,season)
+write_csv(station_season_availability,file.path(out_dir,'station_season_availability.csv'))
 
 cat('Parsed weather rows:',nrow(weather),' | Haka rain events:',nrow(rain_haka),' | Mahela monthly rain rows:',nrow(mahela_rain),' | Haenertsburg daily climate rows:',nrow(haenertsburg_daily),' | matched rainfall months:',nrow(rainfall_overlap),' | matched daily climate days:',nrow(daily_weather_overlap),'\n')
 print(summ)

@@ -49,6 +49,7 @@ rainfall_overlap_summary <- read_csv(file.path(analysis_dir, "mahela_haenertsbur
 daily_weather_overlap <- read_csv(file.path(analysis_dir, "mahela_haenertsburg_daily_weather_overlap.csv"), show_col_types = FALSE)
 daily_weather_overlap_summary <- read_csv(file.path(analysis_dir, "mahela_haenertsburg_daily_weather_summary.csv"), show_col_types = FALSE)
 agdd_summary <- read_csv(file.path(analysis_dir, "agdd_summary.csv"), show_col_types = FALSE)
+station_season_availability <- read_csv(file.path(analysis_dir, "station_season_availability.csv"), show_col_types = FALSE)
 ```
 
 # Overview
@@ -57,6 +58,14 @@ This report compares hourly temperature and humidity records from Haka and Mahel
 
 This script imports data tables and summaries created by analyze_weather.R which imports, checks, and cleans and summarizes the weather data.
 
+
+# Data availability by station and season
+
+The table summarizes which measurements are available at each station in each season, their resolution, observation count, and date coverage. The file columns identify the source workbook or logger export for each measurement. Mahela rainfall has monthly totals in earlier periods and dated near-daily estimates in later periods; monthly-only values are not converted to weekly observations.
+
+```{r station-season-availability}
+kable(station_season_availability, caption = "Weather data availability by station and season")
+```
 
 # Seasonal summary
 
@@ -177,7 +186,7 @@ knitr::include_graphics(file.path(analysis_dir, "mahela_haenertsburg_rainfall_sc
 
 # Rainfall
 
-Haka rainfall is recorded by event; Mahela rainfall comes from monthly farm totals; Haenertsburg provides daily rainfall from a station approximately 15 km from the Mahela orchard in Limpopo. In both rainfall plots, bars show period totals on the left axis and lines show cumulative totals for each site and season on the right axis; cumulative totals reset at the start of each season. Monthly panels use independent zero-based scales by site. Weekly totals are shown for Haka and Haenertsburg; Mahela is not shown weekly because its data are monthly.
+Haka rainfall is recorded by event; Mahela has monthly farm totals in earlier periods and dated near-daily estimates during parts of later seasons; Haenertsburg provides daily rainfall from a station approximately 15 km from the Mahela orchard in Limpopo. In both rainfall plots, bars show period totals on the left axis and lines show cumulative totals for each site and season on the right axis; cumulative totals reset at the start of each season. Monthly panels use independent zero-based scales by site. Weekly totals include Haka events, Mahela's dated estimates, and Haenertsburg daily records. Mahela monthly-only totals remain in the monthly plot and are not apportioned to weeks.
 
 
 ## Monthly
@@ -187,7 +196,7 @@ Haka rainfall is recorded by event; Mahela rainfall comes from monthly farm tota
 knitr::include_graphics(file.path(analysis_dir, "monthly_rainfall.png"))
 ```
 
-**Rainfall tables:** [monthly totals](../data/Cheyenne_ppt_temp_hourly/analysis/monthly_rainfall.csv) · [weekly totals](../data/Cheyenne_ppt_temp_hourly/analysis/weekly_rainfall.csv) · [Haka rain events](../data/Cheyenne_ppt_temp_hourly/analysis/haka_rain_events_clean.csv) · [Mahela monthly records](../data/Cheyenne_ppt_temp_hourly/analysis/mahela_monthly_rain_clean.csv) · [Haenertsburg daily records](../data/Cheyenne_ppt_temp_hourly/analysis/haenertsburg_daily_rainfall_clean.csv)
+**Rainfall tables:** [monthly totals](../data/Cheyenne_ppt_temp_hourly/analysis/monthly_rainfall.csv) · [weekly totals](../data/Cheyenne_ppt_temp_hourly/analysis/weekly_rainfall.csv) · [Haka rain events](../data/Cheyenne_ppt_temp_hourly/analysis/haka_rain_events_clean.csv) · [Mahela rainfall source records](../data/Cheyenne_ppt_temp_hourly/analysis/mahela_monthly_rain_clean.csv) · [Haenertsburg daily records](../data/Cheyenne_ppt_temp_hourly/analysis/haenertsburg_daily_rainfall_clean.csv)
 
 ```{r weekly-rainfall-summary}
 kable(weekly_rainfall_totals, digits = 1,
@@ -212,7 +221,7 @@ The Haka workbook named for 2025–26 spans September 2024 through May 2026. The
 
 # Weekly summaries
 
-Weeks begin on Sunday. Temperature and relative humidity are summarized by site, season, and week using the available logger readings. The table includes the observation count, weekly mean, minimum, and maximum for each variable. Haka rainfall is summarized by week from event records; Haenertsburg rainfall is summed from daily records. Mahela rainfall is only available as monthly totals, so it is not allocated to weeks.
+Weeks begin on Sunday. Temperature and relative humidity are summarized by site, season, and week using the available logger readings. The table includes the observation count, weekly mean, minimum, and maximum for each variable. Haka rainfall is summarized by week from event records; Haenertsburg rainfall is summed from daily records; and Mahela rainfall uses only rows with a source date, which are near-daily estimates. Monthly-only Mahela totals remain excluded from weekly aggregation.
 
 ```{r weekly-weather}
 kable(weekly_weather_summary, digits = 2, caption = "Weekly temperature and relative humidity summaries") |> kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed"), fixed_thead = T)

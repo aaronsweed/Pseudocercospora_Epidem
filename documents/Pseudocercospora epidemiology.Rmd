@@ -60,7 +60,14 @@ styled_kable <- function(x, caption = NULL, digits = 2) {
 
 ## Meeting Notes
 
-- 
+11.12.226
+
+- weather data analysis suggests that the temperature data at the weather station near Mahela will provide realistic estimates of temp and RH at the orchard, but the ppt data is still questionable. Cheyenne will check the monthly 2023 Mahela ppt data since one there are a few outlier months with very large values compared to the regional weather station
+
+- I need to integrate the daily/weekly weather data into the spore count model
+-- Cheyenne would like me to evaluate the utlity of the Darvas model related to the kiwi system
+-- I need to update the GAMs (or other models) to assess their ability to predict spores.
+
 
 
 ## Overview
@@ -96,7 +103,8 @@ Sporecounts_Master <- readxl::read_excel("../data/Sporecounts_Master.xlsx",
     col_types = c("numeric", "numeric", "numeric", 
         "numeric", "numeric", "numeric", 
         "numeric", "numeric", "text", "text", 
-        "text", "text", "text", "date", "date"))
+        "text", "text", "text", "date", "date")) |> 
+  mutate(Trap= as.factor(Trap), Week= as.factor(Week))
 
 ```
 
@@ -268,7 +276,7 @@ ggplot(df_long, aes(x = Value, fill = Season)) +
     x = "Value",
     y = "Frequency",
     fill = "Season",
-    title = "Histograms of measured variables by Orchard and Season"
+    title = "Histograms of weekly measured variables by Orchard and Season"
   )
 
 ```
@@ -277,15 +285,9 @@ ggplot(df_long, aes(x = Value, fill = Season)) +
 
 ```{r spore_pred}
 
-# Prepare data
-dat <- df_clean %>%
-  mutate(
-    Trap = factor(Trap)
-  ) %>%
-  arrange(Trap, Start_date)
 
 # Check whether observations are weekly and unique within traps
-dat %>%
+Sporecounts_Master %>%
   group_by(Orchard, Season, Trap) %>%
   summarise(
     n = n(),
@@ -297,15 +299,73 @@ dat %>%
 
 ```
 
-## Seasonal Weather
 
-The below plots show weekly weather variables by Orchard and season.  See the report Pseudocercospora weather station data.Rmd which imports and compares daily, weekly and monthly summaries of temp, ppt, and RH. In that report
+## Spore patterns over time and space
+
+### Plot spore counts by Date
+
+```{r spore_plots}
 
 
+ggplot(df_clean, aes(x = nSpores, fill= Orchard)) +
+  geom_histogram(bins = 30, colour = "white") +
+  labs(x = "Weekly spore count", y = "Number of observations") +
+  facet_wrap(~Season)+
+  theme_bw()
+
+ggplot(df_clean, aes(Week, nSpores, color= Trap, group= Season)) +
+  geom_line(alpha = 0.6) +
+  geom_point(size = 1.5) +
+  facet_wrap(~ Orchard*Season, scales = "free_y") +
+  labs(
+    x = "Week",
+    y = "Spore count",
+    title = "Weekly spore counts by trap"
+  ) +
+  theme_bw()
+
+
+```
+
+
+### Are spores more prevalent during certain stages of kiwifruit development (Phenology)
+
+```{r spore_phen}
+
+df_clean |> group_by(Orchard, Season, Phenology, Week) |> 
+  summarize(nSpores = mean(nSpores, na.rm= TRUE)) |> 
+    ggplot(aes(x = nSpores)) +
+  geom_histogram(
+    bins = 20,
+    alpha = 0.5,
+    position = "identity"
+  ) +
+  facet_wrap(
+    ~Phenology,
+    scales = "fixed"
+  ) +
+  theme_classic() +
+  labs(
+    x = "Value",
+    y = "Frequency",
+    fill = "Season",
+    title = "Histograms of weekly spore Counts by Phenology"
+  )
+
+```
+
+
+## Weather data
+
+The below plots show weekly weather variables by Orchard and season.  See the report weather station analysis.Rmd which imports and compares daily, weekly and monthly summaries of temp, ppt, and RH.
 
 Notes:
 
-- Orchard manager for the rainfall data for Mahela installed the sensors halfway through the 2023/2024 season which is why that data record is shorter than others
+- Orchard manager for the rainfall data for Mahela installed the sensors halfway through the 2023/2024 season which is why that data record is shorter than others.
+
+- rainfall at Haenertsburg is similar to Mahela, but there are some important deviations, which might be measurement error rather than due to distance. *there are some very large monthly rainfall measurements in 2023 that Cheyenne needs to check to validate.* 
+
+### Weekly
 
 ```{r spore_weather}
 
@@ -426,9 +486,9 @@ ggplot(
 
 ```
 
-### Weather summary per Orchard
+Summary per Orchard
 
-```{r weather_viz}
+```{r weather_viz, cache=T}
 
 library(tidyverse)
 library(lubridate)
@@ -441,7 +501,11 @@ df_clean <- Sporecounts_Master %>%
     # Replace empty string or missing rain with 0 if appropriate
     Rain = as.numeric(ifelse(Rain == "" | is.na(Rain), 0, Rain)),
     nSpores = as.numeric(nSpores)
-  )
+  ) |> 
+   mutate(
+    Trap = factor(Trap)
+  ) %>%
+  arrange(Trap, Start_date)
 
 # 2. Plot Temperature Profile and Rainfall over time
 ggplot(df_clean, aes(x = Start_date)) +
@@ -471,33 +535,17 @@ ggplot(df_clean, aes(x = Start_date)) +
 
 ```
 
-## Are spores more prevalent during certain stages of kiwifruit development (Phenology)
 
-```{r spore_phen}
+### Bind other weather metrics to spore count data
 
-ggplot(dat, aes(x = nSpores)) +
-  geom_histogram(
-    bins = 20,
-    alpha = 0.5,
-    position = "identity"
-  ) +
-  facet_wrap(
-    ~Phenology,
-    scales = "fixed"
-  ) +
-  theme_classic() +
-  labs(
-    x = "Value",
-    y = "Frequency",
-    fill = "Season",
-    title = "Histograms of spore Counts by Phenology"
-  )
+The report "weather station analysis.Rmd" includes daily and weekly weather data that might be helpful for 
+
+```{r weather_bind}
 
 ```
 
 
-
-## Does spore release correlate with certain climatic conditions (temperature, relative humidity, rain)?
+## Does spore release correlate with weekly climatic conditions (temperature, relative humidity, rain)?
 
 -structured model-selection workflow that evaluates weather effects, including time lags, predictor interactions, temporal autocorrelation, and out-of-sample predictive performance.
 
@@ -519,14 +567,14 @@ If spores are released in response to weather, short lags may be appropriate.
 If predictors affect pathogen development, sporulation, or host susceptibility, longer lags may be more plausible.
 
 
-### Create time lags and plot weather variables
+### Create time lags and plot weekly weather variables
 
 ```{r time_lags}
 
 # make time lags
 make_lags <- function(dat, max_lag = 6) {
 
-  dat <- dat %>%
+  dat <- df_clean %>%
     arrange(Orchard, Trap, Start_date) %>%
     group_by(Orchard, Trap) %>%
     mutate(
@@ -543,7 +591,7 @@ make_lags <- function(dat, max_lag = 6) {
 
       dat[[new_name]] <- NA_real_
 
-      idx <- split(seq_len(nrow(dat)), dat$Trap)
+      idx <- split(seq_len(nrow(dat)), df_clean$Trap)
 
       for (ii in idx) {
         for (j in seq_along(ii)) {
@@ -555,7 +603,7 @@ make_lags <- function(dat, max_lag = 6) {
 
             # Require consecutive weekly sampling
             if (all(diff(as.numeric(
-              dat$Date[ii[(j-L):j]]
+              df_clean$Date[ii[(j-L):j]]
             )) == 7)) {
               dat[[new_name]][pos] <-
                 dat[[v]][previous]
@@ -569,20 +617,14 @@ make_lags <- function(dat, max_lag = 6) {
   dat
 }
 
-dat_lag <- make_lags(dat, max_lag = 6)
+dat_lag <- make_lags(df_clean, max_lag = 6)
 
-weather_long <- dat %>%
+weather_long <- df_clean %>%
   pivot_longer(
     cols = c(Tave, Rhm, Rain),
     names_to = "Predictor",
     values_to = "Value"
   )
-
-ggplot(weather_long, aes(Start_date, Value, color= Orchard, shape= Trap, group= Season)) +
-  geom_line() + geom_point()+
-  facet_wrap(~Predictor, scales = "free_y", ncol = 1) +
-  theme_bw() +
-  labs(x = "Week", y = "Observed value")
 
 ```
 
@@ -594,7 +636,7 @@ library(corrplot)
 
 corr_vars <- dat_lag %>%
   select(
-    Tave, Rhm, Rain,
+    nSpores, Tave, Tmin, Rhm, Rain, Tmin_lag1, Tmin_lag2,
     Tave_lag1, Tave_lag2,
     Rhm_lag1, Rhm_lag2,
     Rain_lag1, Rain_lag2
@@ -619,7 +661,7 @@ corrplot(
 
 # Scatter Plot matrix of measured variables
 
-Sporecounts_Master %>%
+df_clean %>%
   select(all_of(numeric_vars), Orchard, Season) %>%
   ggpairs(title ="Scatter Plot matrix of measured variables",
     columns = numeric_vars,
@@ -638,7 +680,12 @@ Sporecounts_Master %>%
 
 # Scatterplots for the weather variables vs Spores
 
-dat_lag_2 <- make_lags(dat, max_lag = 2)
+# calculate mean spores per trap 
+
+df_trap_mean<- df_clean |> group_by(Orchard, Season, Month, Week, Phenology, Start_date) |> 
+  summarize(nSpores = mean(nSpores, na.rm= TRUE), traps =n())
+
+dat_lag_2 <- make_lags(df_trap_mean, max_lag = 2)
 
 weather_long <- dat_lag_2 |>
   pivot_longer( 
@@ -653,20 +700,20 @@ weather_plots <- weather_long %>%
   split(.$WeatherVariable) %>%
   lapply(function(dat) {
     
-    ggplot(dat, aes(x = WeatherValue, y = logSpores)) +
+    ggplot(dat, aes(x = WeatherValue, y = logSpores, color= Orchard)) +
       geom_point(alpha = 0.5) +
       geom_smooth(
         method = "lm",
         se = FALSE
       ) +
       facet_grid(
-        ~ Orchard + Season,
+        ~ Season,
         scales = "free_x"
       ) +
       theme_classic() +
       labs(
         x = unique(dat$WeatherVariable),
-        y = "log(Number of spores + 1)",
+        y = "log(<Mean number of spores per trap + 1)",
         title = paste(
           unique(dat$WeatherVariable),
           "vs Spores (log)"
@@ -683,48 +730,59 @@ for (nm in names(weather_plots)) {
 
 ```
 
+Weekly spore counts look to be:
+- positively correlated with Rhm in the prior and current week 
+- sometimes positively correlated with Tmin in the current and prior week 
+- uncorrelated or negatively correlated with current week's rainfall.
 
-### Plot spore counts over time
 
-```{r spore_plots}
+### Fit Darvas model (weekly rainfall and Tave)
+
+```{r darvas}
+
+darvas<-lm(nSpores~ Tave * Rain, data= dat_lag_2)
+
+summary(darvas)
+  
+visreg::visreg2d(darvas, x= "Tave", y= "Rain")
 
 
-ggplot(dat, aes(x = nSpores, fill= Orchard)) +
-  geom_histogram(bins = 30, colour = "white") +
-  labs(x = "Weekly spore count", y = "Number of observations") +
-  facet_wrap(~Season)+
-  theme_bw()
+darvas_log<-lm(log1p(nSpores) ~ Tave * Rain, data= dat_lag_2)
 
-ggplot(dat, aes(Start_date, nSpores, color= Trap, group= Season)) +
-  geom_line(alpha = 0.6) +
-  geom_point(size = 1.5) +
-  facet_wrap(~ Orchard, scales = "free_y") +
-  labs(
-    x = "Week",
-    y = "Spore count",
-    title = "Weekly spore counts by trap"
-  ) +
-  theme_bw()
+summary(darvas_log)
+  
+visreg::visreg2d(darvas_log, x= "Tave", y= "Rain")
+
+# 3D interactive 
+
+visreg::visreg2d(darvas_log, x= "Tave", y= "Rain", plot= FALSE) |> rgl::persp3d()
 
 
 ```
 
-### Fit linear models
+### Fit other linear combinations
 
-```{r lm}
+```{r lm_mods}
 
-lm0<-lm(log1p(nSpores)~ Tave * Rhm, data= dat_lag_2)
+lm1<-lm(log1p(nSpores)~ Tmin * Rhm, data= dat_lag_2)
 
-summary(lm0)
-  
-lm1<- lm(log1p(nSpores)~ Tave+ Rhm_lag1, data= dat_lag_2)
+lm2<-lm(log1p(nSpores)~ Tmin * Rhm_lag1, data= dat_lag_2)
+
+lm3<-lm(log1p(nSpores)~ Tmin_lag1 * Rhm, data= dat_lag_2)
+
+lm4<-lm(log1p(nSpores)~ Tmin_lag1 * Rhm_lag1, data= dat_lag_2)
+
+AIC(lm1, lm2,lm3,lm4)
+
 summary(lm1)
 
+performance::performance(lm1)
 
-lm_all<-lm(log1p(nSpores)~ Tave+ Rhm_lag2)
+visreg::visreg2d(lm1, x= "Tmin", y= "Rhm")
+
+visreg::visreg2d(lm1, x= "Tmin", y= "Rhm", plot= FALSE) |> rgl::persp3d()
 
 ```
-
 
 
 ### Fit candidate GAMS
@@ -736,17 +794,17 @@ lm_all<-lm(log1p(nSpores)~ Tave+ Rhm_lag2)
 # Fixed analysis dataset for fair model comparisons
 vars_needed <- c(
   "nSpores", "Tave", "Rhm", "Rain", "Phenology", "Trap",
-  "Tave_lag1", "Tave_lag2",
-  "Rhm_lag1", "Rhm_lag2",
+  "Tave_lag1", "Tave_lag2", "Tmin", "Tmin_lag1", "Tmin_lag2",
+  "Rhm", "Rhm_lag1", "Rhm_lag2",
   "Rain_lag1", "Rain_lag2"
 )
 
-dat_model <- dat_lag %>%
+dat_model <- dat_lag %>% # use raw counts per trap
   filter(if_all(all_of(vars_needed), ~ !is.na(.x))) %>%
   droplevels() |> 
   mutate(Phenology = factor(Phenology))
 
-weather <- c("Tave", "Rhm", "Rain")
+weather <- c("Tave", "Rhm", "Rain", "Tmin")
 
 lag_vars <- unlist(lapply(
   weather,
@@ -768,7 +826,8 @@ dat_compare <- dat_model[
 
 #define data to model
 
-data_model<-dat_model # data with NAs at lags
+data_model<-dat_model |> # data with NAs at lags
+  mutate(Orchard  = as.factor(Orchard))
 
 #data_model<-dat_compare # data with no NAs at lags
 
@@ -777,7 +836,8 @@ data_model<-dat_model # data with NAs at lags
 m0 <- gam(
   nSpores ~
     Phenology +
-    s(Trap, bs = "re"),
+    s(Trap, bs = "re") +
+    s(Orchard, bs="re"),
   data = data_model,
   family = nb(),
   method = "REML"
@@ -789,8 +849,9 @@ m1 <- gam(
     s(Rhm, k = 4) +
     s(Rain, k = 4) +
     Phenology +
-    s(Trap, bs = "re"),
-  data = dat_model,
+    s(Trap, bs = "re") +
+   s(Orchard, bs="re"),
+  data = data_model,
   family = nb(),
   method = "ML"
 )
@@ -804,7 +865,8 @@ m2 <- gam(
     s(Rhm_lag1, k = 4) +
     s(Rain_lag1, k = 4) +
     Phenology +
-    s(Trap, bs = "re"),
+    s(Trap, bs = "re")+
+    s(Orchard, bs="re"),
   data = data_model,
   family = nb(),
   method = "ML"
@@ -822,19 +884,35 @@ m3 <- gam(
     s(Rain_lag1, k = 4) +
     s(Rain_lag2, k = 4) +
     Phenology +
-    s(Trap, bs = "re"),
+    s(Trap, bs = "re")+
+   s(Orchard, bs="re"),
   data = data_model,
   family = nb(),
   method = "ML"
 )
 
-# Temperature × humidity interaction
+# Tmin × humidity interaction
 m4 <- gam(
   nSpores ~
-    te(Tave, Rhm, k = c(4, 4)) + #te() estimates a two-dimensional smooth surface; does Tave have different effects at different humidity levels?
+    te(Tmin, Rhm, k = c(4, 4)) + #te() estimates a two-dimensional smooth surface; does Tave have different effects at different humidity levels?
     s(Rain, k = 4) +
     Phenology +
-    s(Trap, bs = "re"),
+    s(Trap, bs = "re")+
+     s(Orchard, bs="re")+ 
+     s(Orchard, bs="re"),
+  data = data_model,
+  family = nb(),
+  method = "ML"
+)
+
+# lagged Tmin × humidity interaction
+m4a <- gam(
+  nSpores ~
+    te(Tmin_lag1, Rhm_lag1, k = c(4, 4)) + #te() estimates a two-dimensional smooth surface; does Tave have different effects at different humidity levels?
+    s(Rain, k = 4) +
+    Phenology +
+    s(Trap, bs = "re")+
+     s(Orchard, bs="re"),
   data = data_model,
   family = nb(),
   method = "ML"
@@ -846,7 +924,57 @@ m5 <- gam(
     s(Tave, k = 4) +
     te(Rhm, Rain, k = c(4, 4)) +  # does rainfall have different effects at different humidity levels.
     Phenology +
-    s(Trap, bs = "re"),
+    s(Trap, bs = "re")+ 
+     s(Orchard, bs="re"),
+  data = data_model,
+  family = nb(),
+  method = "ML"
+)
+
+# Tmin, Rainfall × humidity interaction
+m5a <- gam(
+  nSpores ~
+    s(Tmin, k = 4) +
+    te(Rhm, Rain, k = c(4, 4)) +  # does rainfall have different effects at different humidity levels.
+    Phenology +
+    s(Trap, bs = "re")+
+     s(Orchard, bs="re"),
+  data = data_model,
+  family = nb(),
+  method = "ML"
+)
+
+# Darvas Tave*Rain interaction
+m6 <- gam(
+  nSpores ~
+    te(Tave, Rain, k = c(4, 4)) +  # does rainfall have different effects at different humidity levels.
+    Phenology +
+    s(Trap, bs = "re")+
+     s(Orchard, bs="re"),
+  data = data_model,
+  family = nb(),
+  method = "ML"
+)
+
+
+#  Tmin*Rain interaction
+m7 <- gam(
+  nSpores ~
+    te(Tmin, Rhm, k = c(4, 4)) +  
+    s(Trap, bs = "re")+
+    s(Orchard, bs="re"),
+  data = data_model,
+  family = nb(),
+  method = "ML"
+)
+
+#  Tmin*Rain additive
+m7a <- gam(
+  nSpores ~
+    s(Rhm, k = 4) +  
+    s(Tmin, k = 4) +
+    s(Trap, bs = "re")+
+     s(Orchard, bs="re"),
   data = data_model,
   family = nb(),
   method = "ML"
@@ -858,8 +986,13 @@ models <- list(
   Current_weather = m1,
   Lag1 = m2,
   Lag1_2 = m3,
-  Temp_Humidity = m4,
-  Humidity_Rain = m5
+  Tmin_Humidity = m4,
+  Tmin_Humidity_lag1 = m4a,
+  Tave_Humidity_Rain = m5,
+  Tmin_Humidity_Rain = m5a,
+  Darvas_like = m6,
+  TminXRhm =m7,
+  Tmn_Rhm = m7a
 )
 
 model_comparison <- imap_dfr(models, function(mod, nm) {
@@ -897,7 +1030,7 @@ ggplot(
 
 ```{r gam_lags}
 
-weather <- c("Tave", "Rhm", "Rain")
+weather <- c("Tave", "Rhm", "Rain", "Tmin")
 
 lag_vars <- unlist(lapply(
   weather,
@@ -951,8 +1084,8 @@ fit_lag_model <- function(max_lag, data = dat_compare) {
 
 # Fit lag windows of 0–6 weeks
 lag_models <- setNames(
-  lapply(0:6, fit_lag_model),
-  paste0("Lag_0_", 0:6)
+  lapply(0:2, fit_lag_model),
+  paste0("Lag_0_", 0:2)
 )
 
 # Your baseline model without weather predictors
@@ -1052,7 +1185,7 @@ Below summaries are for the TempRhm model
 
 ```{r am_diag}
 
-mod_sel<-m4
+mod_sel<-m5
 
 summary(mod_sel)
 
@@ -1224,13 +1357,14 @@ newdat <- expand.grid(
 newdat$Rain <- median(data_model$Rain, na.rm = TRUE)
 newdat$Phenology <- levels(data_model$Phenology)[1]
 newdat$Trap <- levels(data_model$Trap)[1]
+newdat$Orchard <- levels(data_model$Orchard)[1]
 
 pr <- predict(
   mod_sel,
   newdata = newdat,
   type = "link",
   se.fit = TRUE,
-  exclude = "s(Trap)"
+  exclude = c("s(Trap)", "s(Orchard")
 )
 
 newdat <- newdat %>%
@@ -1240,7 +1374,7 @@ newdat <- newdat %>%
     upper = exp(pr$fit + 1.96 * pr$se.fit)
   )
 
-# Plot precicted spore counts by Tave and Rhm
+# Plot predicted spore counts by Tave and Rhm
 
 ggplot(newdat, aes(Tave, Rhm, fill = fit)) +
   geom_raster() +
